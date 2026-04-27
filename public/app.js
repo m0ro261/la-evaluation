@@ -159,9 +159,37 @@ function renderKeywords(a) {
       </div>`).join('')}</div>`;
 }
 
-// Phase 12 will replace these:
-function renderRules(_a) {}
-function renderEdges(_a) {}
+// === Phase 12: Dashboard sections E (rules) + F (edge cases) ===
+function renderRules(a) {
+  const el = document.getElementById('rules');
+  if (!a.rules.length) { el.innerHTML = '<h3>Navrhované pravidlá</h3><p class="hint">Žiadne pravidlá nedosiahli prahy.</p>'; return; }
+  const cards = a.rules.map(r => `
+    <article class="rule">
+      <h4>${escapeHtml(r.id)} · <span class="badge ${r.action.classification}">${r.action.classification}</span> ${escapeHtml(r.human_readable)}</h4>
+      <div class="stats">
+        <span><strong>coverage:</strong> ${r.stats.coverage_percent}%</span>
+        <span><strong>confidence:</strong> ${r.stats.confidence_percent}%</span>
+        <span>matches: ${r.stats.matches_total}</span>
+        <span>TP: ${r.stats.true_positives}</span>
+        <span>FP: ${r.stats.false_positives}</span>
+      </div>
+      ${r.examples?.length ? `<details><summary>Príklady (${r.examples.length})</summary><ul>${r.examples.map(ex => `<li><code>${escapeHtml(ex.ticket_id)}</code> — ${escapeHtml(ex.subject)}</li>`).join('')}</ul></details>` : ''}
+      ${r.false_positive_examples?.length ? `<details><summary>False positives (${r.false_positive_examples.length})</summary><ul>${r.false_positive_examples.map(ex => `<li><code>${escapeHtml(ex.ticket_id)}</code> — ${escapeHtml(ex.subject)} <em>(${ex.actual_classification})</em></li>`).join('')}</ul></details>` : ''}
+    </article>`).join('');
+  el.innerHTML = `<h3>Navrhované pravidlá (${a.rules.length})</h3>${cards}`;
+}
+
+function renderEdges(a) {
+  const el = document.getElementById('edges');
+  const ec = a.edge_cases;
+  el.innerHTML = `
+    <h3>Edge cases</h3>
+    <p class="hint">Tickety, ktoré nepokrylo žiadne high-confidence pravidlo, alebo kde pravidlo nesúhlasí so skutočnou klasifikáciou.</p>
+    <h4>Bez pravidla (vzorka ${ec.uncovered.length} z ${ec.uncovered_total})</h4>
+    <ul>${ec.uncovered.map(t => `<li><code>${escapeHtml(t.id)}</code> — ${escapeHtml(t.subject || '(bez subjectu)')} <em>(skut.: ${t.classification ?? 'bez kl.'})</em></li>`).join('')}</ul>
+    <h4>Rozpor (vzorka ${ec.disagreements.length} z ${ec.disagreements_total})</h4>
+    <ul>${ec.disagreements.map(d => `<li><code>${escapeHtml(d.ticket.id)}</code> — ${escapeHtml(d.ticket.subject || '')} — pravidlo: <code>${escapeHtml(d.rule.id)}</code> hovorí <strong>${d.rule.action.classification}</strong>, skutočne: <strong>${d.ticket.classification}</strong></li>`).join('')}</ul>`;
+}
 
 // Setup form (Task 8.2)
 const setupForm = document.getElementById('setup-form');
