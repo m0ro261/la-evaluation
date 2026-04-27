@@ -38,3 +38,34 @@ test('topDomains groups by domain', () => {
   const x = d.find(x => x.domain === 'x.sk');
   assert.equal(x.total, 3);
 });
+
+import { keywordStats, gSquared } from './analyzer.js';
+import { stripSubjectPrefix, tokenize } from './text-utils.js';
+
+test('gSquared higher when word strongly associated with one class', () => {
+  // word appears 9/10 in class, 1/100 in rest
+  const score = gSquared(9, 10, 1, 100);
+  // score should be substantially positive
+  assert.ok(score > 10, `expected high G2, got ${score}`);
+});
+
+test('gSquared near zero when word is uniform across classes', () => {
+  const score = gSquared(5, 100, 5, 100);
+  assert.ok(Math.abs(score) < 0.5, `expected ~0, got ${score}`);
+});
+
+test('keywordStats returns top differential words per class', () => {
+  const tickets = [
+    { classification: 'BUG', subject: 'nefunguje admin nefunguje', first_customer_message: { plain_text: 'nefunguje admin' } },
+    { classification: 'BUG', subject: 'chyba nefunguje', first_customer_message: { plain_text: 'chyba' } },
+    { classification: 'ZP',  subject: 'ako nastavit',   first_customer_message: { plain_text: 'ako nastavit' } },
+    { classification: 'ZP',  subject: 'ako pouzivat',   first_customer_message: { plain_text: 'ako pouzivat' } },
+    { classification: 'TP',  subject: 'uprava designu', first_customer_message: { plain_text: 'uprava designu' } },
+  ];
+  const stopwords = new Set();
+  const out = keywordStats(tickets, { stopwords, topN: 5 });
+  assert.ok(out.BUG.subject.length >= 1);
+  assert.equal(out.BUG.subject[0].word, 'nefunguje');
+  // ZP top should not be 'nefunguje'
+  assert.ok(!out.ZP.subject.find(w => w.word === 'nefunguje'));
+});
