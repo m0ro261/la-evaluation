@@ -104,3 +104,79 @@ export function generateKeywordRules(tickets, { stopwords, minConfidence = 70, m
   }
   return dedupBySupersetCoverage(rules).sort((a, b) => b.stats.coverage_percent - a.stats.coverage_percent || b.stats.confidence_percent - a.stats.confidence_percent);
 }
+
+function dominantClass(byClassCounts) {
+  let bestCls = null, bestCount = 0;
+  for (const [cls, n] of Object.entries(byClassCounts)) {
+    if (n > bestCount) { bestCount = n; bestCls = cls; }
+  }
+  return { cls: bestCls, count: bestCount };
+}
+
+function groupBy(tickets, keyFn) {
+  const map = new Map();
+  for (const t of tickets) {
+    const k = keyFn(t);
+    if (!k || !t.classification) continue;
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(t);
+  }
+  return map;
+}
+
+function classCounts(tickets) {
+  const c = { ZP: 0, TP: 0, BUG: 0, URGENT_BUG: 0 };
+  for (const t of tickets) if (c[t.classification] !== undefined) c[t.classification]++;
+  return c;
+}
+
+export function generateDomainRules(tickets, { minTickets = 10, minConfidence = 80 } = {}) {
+  const groups = groupBy(tickets, t => t.owner?.domain);
+  const rules = [];
+  for (const [domain, items] of groups) {
+    if (items.length < minTickets) continue;
+    const counts = classCounts(items);
+    const { cls, count } = dominantClass(counts);
+    if (!cls) continue;
+    const confidence = (count / items.length) * 100;
+    if (confidence < minConfidence) continue;
+    const r = makeRule('sender_domain', 'sender_domain', domain, cls);
+    r.stats = scoreRule(r, tickets);
+    rules.push(r);
+  }
+  return rules;
+}
+
+export function generateEmailRules(tickets, { minTickets = 5, minConfidence = 90 } = {}) {
+  const groups = groupBy(tickets, t => t.owner?.email);
+  const rules = [];
+  for (const [email, items] of groups) {
+    if (items.length < minTickets) continue;
+    const counts = classCounts(items);
+    const { cls, count } = dominantClass(counts);
+    if (!cls) continue;
+    const confidence = (count / items.length) * 100;
+    if (confidence < minConfidence) continue;
+    const r = makeRule('sender_email', 'sender_email', email, cls);
+    r.stats = scoreRule(r, tickets);
+    rules.push(r);
+  }
+  return rules;
+}
+
+export function edgeCases(tickets, rules, { sampleSize = 10 } = {}) {
+  const uncovered = [];
+  const disagreements = [];
+  for (const t of tickets) {
+    let matchedRule = null;
+    for (const r of rules) if (ruleMatches(r, t)) { matchedRule = r; break; }
+    if (!matchedRule) {
+      uncovered.push(t);
+    } else if (t.classification && t.classification !== matchedRule.action.classification) {
+      disagreements.push({ ticket: t, rule: matchedRule });
+    }
+  }
+  // sample
+  const sample = (arr) => arr.slice(0, sampleSize);
+  return { uncovered: sample(uncovered), disagreements: sample(disagreements), uncovered_total: uncovered.length, disagreements_total: disagreements.length };
+}
