@@ -1,0 +1,17 @@
+{
+  "name": "la-tickets-analyzer",
+  "version": "0.1.0",
+  "description": "Local analyzer for LiveAgent tickets that proposes LA Rules from historical patterns",
+  "main": "server/app.js",
+  "scripts": {
+    "start": "node server/app.js",
+    "dev": "node --watch server/app.js",
+    "test": "node --test server/**/*.test.js"
+  },
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "express": "^4.19.2",
+    "dotenv": "^16.4.5"
+  }
+}
