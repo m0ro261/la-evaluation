@@ -15,8 +15,46 @@ async function bootstrap() {
   show(cfg?.hasKey ? 'download' : 'setup');
 }
 
-// placeholder hooks; later tasks fill them
-async function loadTags() { /* Task 10 */ }
+// === Phase 10: Tag categorization ===
+const KNOWN_CLASSIFICATION_NAMES = new Set([
+  '0 - Zákaznícka podpora', '0 - Technická podpora', '0 - BUG/Incident', '0 - URGENT BUG',
+]);
+const CATEGORIES = ['classification', 'client', 'topic', 'status', 'internal', 'ignored'];
+
+async function loadTags() {
+  const tbody = document.querySelector('#tags-table tbody');
+  tbody.innerHTML = '<tr><td colspan="3">Načítavam…</td></tr>';
+  const [cacheRes, catsRes] = await Promise.all([
+    fetch('/api/cache'), fetch('/api/tag-categories'),
+  ]);
+  if (!cacheRes.ok) { tbody.innerHTML = '<tr><td colspan="3">Najprv stiahnite tickety.</td></tr>'; return; }
+  const cache = await cacheRes.json();
+  const cats = await catsRes.json();
+  const ticketsRes = await fetch('/api/tickets').then(r => r.json());
+  const counts = new Map();
+  for (const t of ticketsRes.tickets) for (const id of t.tag_ids ?? []) counts.set(id, (counts.get(id) ?? 0) + 1);
+  const tagIdToName = cache.meta?.tag_id_to_name ?? {};
+  const rows = [...counts.entries()]
+    .map(([id, count]) => ({ id, count, name: tagIdToName[id] ?? id }))
+    .sort((a, b) => b.count - a.count);
+  tbody.innerHTML = rows.map(r => {
+    const current = cats.categories?.[r.id] ?? (KNOWN_CLASSIFICATION_NAMES.has(r.name) ? 'classification' : 'topic');
+    const opts = CATEGORIES.map(c => `<option value="${c}"${c === current ? ' selected' : ''}>${c}</option>`).join('');
+    return `<tr><td>${escapeHtml(r.name)}</td><td>${r.count}</td><td><select data-id="${r.id}">${opts}</select></td></tr>`;
+  }).join('');
+}
+
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+document.getElementById('tags-save').addEventListener('click', async () => {
+  const selects = document.querySelectorAll('#tags-table select');
+  const categories = {};
+  selects.forEach(s => { categories[s.dataset.id] = s.value; });
+  await fetch('/api/tag-categories', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ categories }) });
+  show('dashboard');
+});
+
+// loadDashboard is still a placeholder for Phase 11/12
 async function loadDashboard() { /* Tasks 11-12 */ }
 
 // Setup form (Task 8.2)
