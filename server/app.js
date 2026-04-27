@@ -9,6 +9,7 @@ import { downloadAll } from './download.js';
 import { distributionStats, weeklyTrend, topCustomers, topDomains, keywordStats } from './analyzer.js';
 import { generateAllRules } from './rule-generator.js';
 import { loadStopwords } from './text-utils.js';
+import { rulesToMarkdown, ticketsToCsv } from './exporter.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -144,6 +145,37 @@ export function createApp({ clientFactory, storageFactory } = {}) {
       rules,
       edge_cases,
     });
+  });
+
+  async function getAnalysisOrStatus(res) {
+    const storage = makeStorage(dataDir);
+    const data = await storage.loadLatest();
+    if (!data) { res.status(404).json({ ok: false, message: 'no cache' }); return null; }
+    let stopwords = new Set();
+    try { stopwords = await loadStopwords(stopwordsPath); } catch {}
+    return { tickets: data.tickets, ...generateAllRules(data.tickets, { stopwords }) };
+  }
+
+  app.get('/api/export/rules.json', async (_req, res) => {
+    const a = await getAnalysisOrStatus(res); if (!a) return;
+    res.setHeader('Content-Disposition', 'attachment; filename="rules.json"');
+    res.json({ rules: a.rules, edge_cases: a.edge_cases });
+  });
+
+  app.get('/api/export/rules.md', async (_req, res) => {
+    const a = await getAnalysisOrStatus(res); if (!a) return;
+    res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="rules.md"');
+    res.send(rulesToMarkdown(a.rules));
+  });
+
+  app.get('/api/export/tickets.csv', async (_req, res) => {
+    const storage = makeStorage(dataDir);
+    const data = await storage.loadLatest();
+    if (!data) return res.status(404).json({ ok: false, message: 'no cache' });
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="tickets.csv"');
+    res.send(ticketsToCsv(data.tickets));
   });
 
   return app;
