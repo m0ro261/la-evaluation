@@ -284,6 +284,17 @@ async function streamDownload(payload) {
         }
       } else if (event === 'done') {
         logLine(`HOTOVO — celkom ${data.count} ticketov${data.cancelled ? ' (zrušené)' : ''}`);
+        if (data.skips || data.raw_count != null) {
+          const s = data.skips ?? {};
+          const byStatus = Object.entries(s.by_status ?? {}).map(([k, v]) => `status=${k}: ${v}`).join(', ');
+          const parts = [
+            data.raw_count != null ? `surových z API: ${data.raw_count}` : null,
+            (s.deleted ?? 0) > 0 ? `deleted: ${s.deleted}` : null,
+            byStatus || null,
+            (s.dedup ?? 0) > 0 ? `už v cache: ${s.dedup}` : null,
+          ].filter(Boolean);
+          if (parts.length) logLine(`  └─ ${parts.join(' · ')}`);
+        }
       } else if (event === 'error') {
         logLine(`Chyba: ${data.message}`);
       }

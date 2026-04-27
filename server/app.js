@@ -100,7 +100,7 @@ export function createApp({ clientFactory, storageFactory } = {}) {
       const meta = { ...result.meta, count: merged.length, saved_at: new Date().toISOString() };
       await storage.saveCache({ tickets: merged, meta });
 
-      send('done', { count: merged.length, cancelled: result.cancelled, meta });
+      send('done', { count: merged.length, cancelled: result.cancelled, skips: result.meta.skips, raw_count: result.meta.raw_count, meta });
       res.end();
     } catch (e) {
       send('error', { message: e.message, status: e.status });
