@@ -1,5 +1,84 @@
 <!doctype html>
 <html lang="sk">
-  <head><meta charset="utf-8"><title>LA Tickets Analyzer</title></head>
-  <body><h1>LA Tickets Analyzer</h1><p>Bootstrap OK.</p></body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1200">
+  <title>LA Tickets Analyzer</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>LA Tickets Analyzer</h1>
+    <nav>
+      <button data-target="setup">Setup</button>
+      <button data-target="download">Stiahnuť</button>
+      <button data-target="tags">Tagy</button>
+      <button data-target="dashboard">Dashboard</button>
+      <button data-target="export">Export</button>
+    </nav>
+  </header>
+  <main>
+    <section id="setup" class="panel active">
+      <h2>1 · Nastavenie pripojenia</h2>
+      <form id="setup-form">
+        <label>LA endpoint URL <input name="baseUrl" type="url" placeholder="https://creativesites.ladesk.com/api/v3" required></label>
+        <label>API kľúč <input name="apiKey" type="password" autocomplete="off" required></label>
+        <label>Default obdobie (dni) <input name="periodDays" type="number" min="1" max="730" value="180"></label>
+        <div class="row">
+          <button type="button" id="test-conn">Otestovať pripojenie</button>
+          <button type="submit">Uložiť</button>
+        </div>
+        <p class="status" id="setup-status"></p>
+      </form>
+    </section>
+
+    <section id="download" class="panel">
+      <h2>2 · Sťahovanie ticketov</h2>
+      <form id="download-form">
+        <label>Od <input name="from" type="date" required></label>
+        <label>Do <input name="to" type="date"></label>
+        <label>Max ticketov <input name="maxTickets" type="number" value="5000"></label>
+        <div class="row">
+          <button type="submit" id="dl-start">Spustiť sťahovanie</button>
+          <button type="button" id="dl-cancel" disabled>Zrušiť</button>
+        </div>
+      </form>
+      <pre id="dl-log" class="log"></pre>
+      <progress id="dl-progress" value="0" max="100" hidden></progress>
+    </section>
+
+    <section id="tags" class="panel">
+      <h2>3 · Kategorizácia tagov</h2>
+      <p class="hint">Označte, do akej kategórie patrí každý tag. Klasifikačné tagy (ZP/TP/BUG/URGENT BUG) sú pre-vyplnené.</p>
+      <table id="tags-table"><thead><tr><th>Tag</th><th>Počet</th><th>Kategória</th></tr></thead><tbody></tbody></table>
+      <button id="tags-save">Uložiť a re-analyzovať</button>
+    </section>
+
+    <section id="dashboard" class="panel">
+      <h2>4 · Dashboard</h2>
+      <div class="grid">
+        <div id="overview" class="card"></div>
+        <div id="trend" class="card"><canvas></canvas></div>
+        <div id="dist" class="card"><canvas></canvas></div>
+        <div id="customers" class="card"></div>
+        <div id="domains" class="card"></div>
+        <div id="keywords" class="card wide"></div>
+        <div id="rules" class="card wide"></div>
+        <div id="edges" class="card wide"></div>
+      </div>
+    </section>
+
+    <section id="export" class="panel">
+      <h2>5 · Export</h2>
+      <p>Stiahnutia sú generované zo súčasného obsahu cache + tag categorization.</p>
+      <ul class="export-links">
+        <li><a href="/api/export/rules.md" download>rules.md</a> — pre meeting/Notion</li>
+        <li><a href="/api/export/rules.json" download>rules.json</a> — strojovo čitateľné</li>
+        <li><a href="/api/export/tickets.csv" download>tickets.csv</a> — surové dáta</li>
+      </ul>
+    </section>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="/app.js" type="module"></script>
+</body>
 </html>
