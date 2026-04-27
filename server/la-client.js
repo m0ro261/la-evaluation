@@ -39,5 +39,31 @@ export function createClient({ baseUrl, apiKey, fetch = globalThis.fetch, sleep 
     try { return await res.json(); } catch { return null; }
   }
 
-  return { laFetch };
+  async function listAgents() {
+    return laFetch('/agents', { query: { _perPage: 100 } });
+  }
+  async function listTags() {
+    return laFetch('/tags');
+  }
+  async function* listTickets({ from, to, signal }) {
+    let page = 1;
+    while (true) {
+      if (signal?.aborted) return;
+      const filters = [['date_created', 'D>=', from]];
+      if (to) filters.push(['date_created', 'D<=', to]);
+      const items = await laFetch('/tickets', {
+        query: {
+          _perPage: 100,
+          _page: page,
+          _sortField: 'date_created',
+          _sortDir: 'ASC',
+          _filters: JSON.stringify(filters),
+        }
+      });
+      if (!Array.isArray(items) || items.length === 0) return;
+      for (const t of items) yield t;
+      page += 1;
+    }
+  }
+  return { laFetch, listAgents, listTags, listTickets };
 }
