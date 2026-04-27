@@ -180,3 +180,16 @@ export function edgeCases(tickets, rules, { sampleSize = 10 } = {}) {
   const sample = (arr) => arr.slice(0, sampleSize);
   return { uncovered: sample(uncovered), disagreements: sample(disagreements), uncovered_total: uncovered.length, disagreements_total: disagreements.length };
 }
+
+export function generateAllRules(tickets, { stopwords = new Set() } = {}) {
+  // reset id counter for deterministic ids per analysis
+  _rid = 0;
+  const kw = generateKeywordRules(tickets, { stopwords });
+  const dom = generateDomainRules(tickets);
+  const em = generateEmailRules(tickets);
+  const merged = [...kw, ...dom, ...em].sort((a, b) => b.stats.coverage_percent - a.stats.coverage_percent || b.stats.confidence_percent - a.stats.confidence_percent);
+  // re-id stably after sort
+  merged.forEach((r, i) => { r.id = `rule_${String(i + 1).padStart(3, '0')}`; });
+  const ec = edgeCases(tickets, merged);
+  return { rules: merged, edge_cases: ec };
+}

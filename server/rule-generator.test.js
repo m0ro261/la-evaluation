@@ -40,7 +40,7 @@ test('generateKeywordRules emits rules above thresholds, sorted by coverage', ()
   }
 });
 
-import { generateDomainRules, generateEmailRules, edgeCases } from './rule-generator.js';
+import { generateDomainRules, generateEmailRules, edgeCases, generateAllRules } from './rule-generator.js';
 
 const TICKETS_DOM = [
   ...Array.from({ length: 10 }, (_, i) => ({ id: `c${i}`, classification: 'TP', subject: '', first_customer_message: null, owner: { email: `u${i}@klient.sk`, domain: 'klient.sk' } })),
@@ -77,4 +77,15 @@ test('edgeCases returns tickets that no rule matches AND tickets where rules dis
   const ec = edgeCases(tickets, rules, { sampleSize: 10 });
   assert.ok(ec.uncovered.find(t => t.id === 'b' || t.id === 'c'));
   assert.equal(ec.disagreements.length, 0); // r1 only matches 'a', which agrees
+});
+
+test('generateAllRules merges keyword + domain + email rules with stable ids', () => {
+  const stopwords = new Set();
+  const out = generateAllRules(TICKETS, { stopwords });
+  assert.ok(Array.isArray(out.rules));
+  assert.ok(Array.isArray(out.edge_cases.uncovered));
+  // stable ids (rule_001, rule_002, ...)
+  for (let i = 0; i < out.rules.length; i++) {
+    assert.match(out.rules[i].id, /^rule_\d{3}$/);
+  }
 });
