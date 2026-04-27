@@ -1,5 +1,20 @@
+import { stripHtml } from './text-utils.js';
+
 export class ApiError extends Error {
   constructor(message, status, body) { super(message); this.status = status; this.body = body; }
+}
+
+export function firstCustomerMessage(groups, agentIds) {
+  if (!Array.isArray(groups)) return null;
+  for (const g of groups) {
+    if (!g?.userid) continue;
+    if (g.userid === 'system00') continue;
+    if (agentIds.has(g.userid)) continue;
+    const body = (g.messages ?? []).find(m => m.type === 'M');
+    if (!body) continue;
+    return { raw_html: body.message ?? '', plain_text: stripHtml(body.message ?? '') };
+  }
+  return null;
 }
 
 const defaultSleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -45,6 +60,9 @@ export function createClient({ baseUrl, apiKey, fetch = globalThis.fetch, sleep 
   async function listTags() {
     return laFetch('/tags');
   }
+  async function getTicketMessages(ticketId) {
+    return laFetch(`/tickets/${encodeURIComponent(ticketId)}/messages`);
+  }
   async function* listTickets({ from, to, signal }) {
     let page = 1;
     while (true) {
@@ -65,5 +83,5 @@ export function createClient({ baseUrl, apiKey, fetch = globalThis.fetch, sleep 
       page += 1;
     }
   }
-  return { laFetch, listAgents, listTags, listTickets };
+  return { laFetch, listAgents, listTags, listTickets, getTicketMessages };
 }

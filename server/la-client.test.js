@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createClient } from './la-client.js';
+import { createClient, firstCustomerMessage } from './la-client.js';
 
 function fakeFetch(responses) {
   let i = 0;
@@ -94,4 +94,33 @@ test('listTags fetches one page and returns array', async () => {
     fetch: async () => jsonRes([{ id: '6vy2', name: '0 - Zákaznícka podpora' }]), sleep: async () => {} });
   const tags = await client.listTags();
   assert.equal(tags[0].id, '6vy2');
+});
+
+test('firstCustomerMessage skips system00 and agent groups', () => {
+  const groups = [
+    { userid: 'system00', messages: [{ type: 'M', message: 'auto reply' }] },
+    { userid: 'agent_a', messages: [{ type: 'M', message: 'hi from agent' }] },
+    { userid: 'cust_x',  messages: [{ type: 'H', format: 'T', message: 'Subject: foo' }, { type: 'M', format: 'H', message: '<p>Hello</p>' }] },
+  ];
+  const msg = firstCustomerMessage(groups, new Set(['agent_a']));
+  assert.equal(msg.raw_html, '<p>Hello</p>');
+  assert.equal(msg.plain_text, 'Hello');
+});
+
+test('firstCustomerMessage returns null when no customer group exists', () => {
+  const groups = [{ userid: 'system00', messages: [{ type: 'M', message: 'x' }] }];
+  assert.equal(firstCustomerMessage(groups, new Set()), null);
+});
+
+test('firstCustomerMessage returns null when group has no body message', () => {
+  const groups = [{ userid: 'cust', messages: [{ type: 'H', message: 'Subject: x' }] }];
+  assert.equal(firstCustomerMessage(groups, new Set()), null);
+});
+
+test('getTicketMessages calls /tickets/{id}/messages', async () => {
+  let captured;
+  const client = createClient({ baseUrl: 'https://x/api/v3', apiKey: 'K',
+    fetch: async (url) => { captured = url; return jsonRes([]); }, sleep: async () => {} });
+  await client.getTicketMessages('abc123');
+  assert.match(captured, /\/tickets\/abc123\/messages$/);
 });
