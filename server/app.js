@@ -6,6 +6,9 @@ import 'dotenv/config';
 import { createClient } from './la-client.js';
 import { createStorage } from './storage.js';
 import { downloadAll } from './download.js';
+import { distributionStats, weeklyTrend, topCustomers, topDomains, keywordStats } from './analyzer.js';
+import { generateAllRules } from './rule-generator.js';
+import { loadStopwords } from './text-utils.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -93,6 +96,54 @@ export function createApp({ clientFactory, storageFactory } = {}) {
       send('error', { message: e.message, status: e.status });
       res.end();
     }
+  });
+
+  const stopwordsPath = path.join(dataDir, 'stopwords-sk.json');
+
+  app.get('/api/cache', async (_req, res) => {
+    const storage = makeStorage(dataDir);
+    const data = await storage.loadLatest();
+    if (!data) return res.status(404).json({ ok: false, message: 'no cache' });
+    res.json({ ok: true, count: data.tickets.length, meta: data.meta, saved_at: data.saved_at });
+  });
+
+  app.get('/api/tickets', async (_req, res) => {
+    const storage = makeStorage(dataDir);
+    const data = await storage.loadLatest();
+    if (!data) return res.status(404).json({ ok: false, message: 'no cache' });
+    res.json({ ok: true, tickets: data.tickets });
+  });
+
+  app.get('/api/tag-categories', async (_req, res) => {
+    const storage = makeStorage(dataDir);
+    const cats = await storage.readJson('tag-categories.json');
+    res.json(cats ?? { version: 1, categories: {} });
+  });
+
+  app.post('/api/tag-categories', async (req, res) => {
+    const storage = makeStorage(dataDir);
+    const payload = { version: 1, updated_at: new Date().toISOString(), categories: req.body?.categories ?? {} };
+    await storage.writeJson('tag-categories.json', payload);
+    res.json({ ok: true });
+  });
+
+  app.get('/api/analysis', async (_req, res) => {
+    const storage = makeStorage(dataDir);
+    const data = await storage.loadLatest();
+    if (!data) return res.status(404).json({ ok: false, message: 'no cache' });
+    let stopwords = new Set();
+    try { stopwords = await loadStopwords(stopwordsPath); } catch {}
+    const tickets = data.tickets;
+    const { rules, edge_cases } = generateAllRules(tickets, { stopwords });
+    res.json({
+      distribution: distributionStats(tickets),
+      weekly_trend: weeklyTrend(tickets),
+      top_customers: topCustomers(tickets, 20),
+      top_domains: topDomains(tickets, 20),
+      keyword_stats: keywordStats(tickets, { stopwords, topN: 30 }),
+      rules,
+      edge_cases,
+    });
   });
 
   return app;
