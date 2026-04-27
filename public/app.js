@@ -60,4 +60,82 @@ setupForm.addEventListener('submit', async (e) => {
   else { setupStatus.className = 'status err'; setupStatus.textContent = `Chyba: ${body.message}`; }
 });
 
+// === Phase 9: Download UI ===
+const dlForm = document.getElementById('download-form');
+const dlLog = document.getElementById('dl-log');
+const dlStart = document.getElementById('dl-start');
+const dlCancel = document.getElementById('dl-cancel');
+const dlProgress = document.getElementById('dl-progress');
+let dlAbort = null;
+
+function pad(n) { return String(n).padStart(2, '0'); }
+function defaultFromDate(days) {
+  const d = new Date(Date.now() - days * 86400000);
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`;
+}
+
+async function setDefaultDates() {
+  const cfg = await fetch('/api/config').then(r => r.json());
+  document.querySelector('[name=from]').value = defaultFromDate(cfg.periodDays || 180);
+}
+setDefaultDates();
+
+function logLine(msg) { dlLog.textContent += msg + '\n'; dlLog.scrollTop = dlLog.scrollHeight; }
+
+async function streamDownload(payload) {
+  dlAbort = new AbortController();
+  const res = await fetch('/api/download', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload), signal: dlAbort.signal,
+  });
+  if (!res.ok && res.headers.get('content-type')?.includes('json')) {
+    const err = await res.json(); logLine(`Chyba: ${err.message}`); return;
+  }
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += dec.decode(value, { stream: true });
+    const chunks = buffer.split('\n\n');
+    buffer = chunks.pop();
+    for (const chunk of chunks) {
+      const lines = chunk.split('\n');
+      const event = lines.find(l => l.startsWith('event: '))?.slice(7) ?? 'message';
+      const data = JSON.parse(lines.find(l => l.startsWith('data: '))?.slice(6) || '{}');
+      if (event === 'progress') {
+        if (data.phase === 'tickets') logLine(`tickety: ${data.count}`);
+        if (data.phase === 'messages') {
+          logLine(`správy: ${data.done} / ${data.total}`);
+          dlProgress.hidden = false; dlProgress.max = data.total; dlProgress.value = data.done;
+        }
+      } else if (event === 'done') {
+        logLine(`HOTOVO — celkom ${data.count} ticketov${data.cancelled ? ' (zrušené)' : ''}`);
+      } else if (event === 'error') {
+        logLine(`Chyba: ${data.message}`);
+      }
+    }
+  }
+}
+
+dlForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(dlForm);
+  dlLog.textContent = '';
+  dlStart.disabled = true; dlCancel.disabled = false;
+  try {
+    await streamDownload({
+      from: `${fd.get('from')} 00:00:00`,
+      to: fd.get('to') ? `${fd.get('to')} 23:59:59` : null,
+      maxTickets: Number(fd.get('maxTickets')) || 5000,
+    });
+  } catch (e) {
+    if (e.name !== 'AbortError') logLine(`Chyba: ${e.message}`);
+  } finally {
+    dlStart.disabled = false; dlCancel.disabled = true; dlAbort = null;
+  }
+});
+dlCancel.addEventListener('click', () => { if (dlAbort) { dlAbort.abort(); logLine('Cancelling…'); } });
+
 bootstrap();
