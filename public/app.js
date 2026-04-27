@@ -54,8 +54,114 @@ document.getElementById('tags-save').addEventListener('click', async () => {
   show('dashboard');
 });
 
-// loadDashboard is still a placeholder for Phase 11/12
-async function loadDashboard() { /* Tasks 11-12 */ }
+// === Phase 11: Dashboard sections A–D ===
+let charts = {}; // keep handles to destroy on reload
+
+function destroyCharts() { for (const k of Object.keys(charts)) { try { charts[k].destroy(); } catch {} } charts = {}; }
+
+const CLASS_COLORS = { ZP: '#811e00', TP: '#c05500', BUG: '#8e002d', URGENT_BUG: '#00be90' };
+
+async function loadDashboard() {
+  destroyCharts();
+  const res = await fetch('/api/analysis');
+  if (!res.ok) {
+    document.getElementById('overview').textContent = 'Najprv stiahnite tickety.';
+    return;
+  }
+  const a = await res.json();
+  renderOverview(a);
+  renderTrend(a);
+  renderDistribution(a);
+  renderCustomers(a);
+  renderDomains(a);
+  renderKeywords(a);
+  renderRules(a);
+  renderEdges(a);
+}
+
+function pct(n, total) { return total === 0 ? 0 : Math.round((n / total) * 1000) / 10; }
+
+function renderOverview(a) {
+  const el = document.getElementById('overview');
+  const d = a.distribution;
+  el.innerHTML = `
+    <h3>Prehľad</h3>
+    <p><strong>${d.total}</strong> ticketov; <strong>${d.unclassified}</strong> bez klasifikácie (${pct(d.unclassified, d.total)}%).</p>
+    <ul>
+      ${['ZP','TP','BUG','URGENT_BUG'].map(c => `<li><span class="badge ${c}">${c}</span> ${d.by_class[c]} (${pct(d.by_class[c], d.total)}%)</li>`).join('')}
+    </ul>`;
+}
+
+function renderTrend(a) {
+  const ctx = document.querySelector('#trend canvas');
+  const labels = a.weekly_trend.map(w => w.week);
+  charts.trend = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: ['ZP','TP','BUG','URGENT_BUG'].map(c => ({
+        label: c, data: a.weekly_trend.map(w => w.by_class[c]), borderColor: CLASS_COLORS[c], tension: 0.3, fill: false,
+      })),
+    },
+    options: { plugins: { title: { display: true, text: 'Tickety / týždeň' } } },
+  });
+}
+
+function renderDistribution(a) {
+  const ctx = document.querySelector('#dist canvas');
+  const d = a.distribution;
+  charts.dist = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['ZP','TP','BUG','URGENT_BUG','bez klasifikácie'],
+      datasets: [{ data: ['ZP','TP','BUG','URGENT_BUG'].map(c => d.by_class[c]).concat([d.unclassified]),
+        backgroundColor: ['#811e00','#c05500','#8e002d','#00be90','#cccccc'] }],
+    },
+    options: { plugins: { title: { display: true, text: 'Distribúcia klasifikácie' } } },
+  });
+}
+
+function renderCustomers(a) {
+  const el = document.getElementById('customers');
+  el.innerHTML = `<h3>Top klienti (email)</h3>` + ladderTable(a.top_customers, c => c.email);
+}
+function renderDomains(a) {
+  const el = document.getElementById('domains');
+  el.innerHTML = `<h3>Top domény</h3>` + ladderTable(a.top_domains, c => c.domain);
+}
+
+function ladderTable(rows, labelFn) {
+  if (!rows.length) return '<p class="hint">žiadne dáta</p>';
+  const head = `<thead><tr><th>identifikátor</th><th>spolu</th><th>ZP</th><th>TP</th><th>BUG</th><th>URGENT</th><th>bez kl.</th></tr></thead>`;
+  const body = rows.map(r => `<tr>
+    <td>${escapeHtml(labelFn(r))}</td>
+    <td>${r.total}</td>
+    <td>${r.by_class.ZP}</td>
+    <td>${r.by_class.TP}</td>
+    <td>${r.by_class.BUG}</td>
+    <td>${r.by_class.URGENT_BUG}</td>
+    <td>${r.unclassified}</td></tr>`).join('');
+  return `<table>${head}<tbody>${body}</tbody></table>`;
+}
+
+function renderKeywords(a) {
+  const el = document.getElementById('keywords');
+  const classes = ['ZP','TP','BUG','URGENT_BUG'];
+  const renderList = (arr) => arr.length === 0
+    ? '<p class="hint">—</p>'
+    : `<ol>${arr.slice(0, 15).map(w => `<li><code>${escapeHtml(w.word)}</code> <span class="hint">G²=${w.g2.toFixed(1)}, in-class=${w.count_in_class}, rest=${w.count_in_rest}</span></li>`).join('')}</ol>`;
+  el.innerHTML = `<h3>Top diferenciálne slová (G² log-likelihood)</h3>` +
+    `<div class="grid">${classes.map(c => `
+      <div>
+        <h4><span class="badge ${c}">${c}</span></h4>
+        <h5>v subjekte</h5>${renderList(a.keyword_stats[c].subject)}
+        <h5>v správe</h5>${renderList(a.keyword_stats[c].body)}
+      </div>`).join('')}</div>`;
+}
+
+// Phase 12 will replace these:
+function renderRules(_a) {}
+function renderEdges(_a) {}
 
 // Setup form (Task 8.2)
 const setupForm = document.getElementById('setup-form');
