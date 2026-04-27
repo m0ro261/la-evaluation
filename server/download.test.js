@@ -83,6 +83,44 @@ test('downloadAll filter is configurable via skippedStatuses option', async () =
   assert.equal(result.meta.skips.by_status.D, 1);
 });
 
+test('downloadAll fetches messages in parallel up to concurrency limit', async () => {
+  const tickets = Array.from({ length: 12 }, (_, i) => ({ id: `t${i}`, subject: '', date_created: '', tags: [], owner_email: 'x@y' }));
+  let inFlight = 0;
+  let peakInFlight = 0;
+  const client = {
+    listAgents: async () => [],
+    listTags: async () => [],
+    listTickets: async function* () { for (const t of tickets) yield t; },
+    getTicketMessages: async () => {
+      inFlight++;
+      peakInFlight = Math.max(peakInFlight, inFlight);
+      await new Promise(r => setTimeout(r, 5));
+      inFlight--;
+      return [];
+    },
+  };
+  const result = await downloadAll({ client, from: 'X', maxTickets: 5000, knownIds: new Set(), concurrency: 4 });
+  assert.equal(result.tickets.length, 12);
+  assert.ok(peakInFlight >= 2, `expected parallel fetches, peak was ${peakInFlight}`);
+  assert.ok(peakInFlight <= 4, `expected at most 4 in flight, peak was ${peakInFlight}`);
+});
+
+test('downloadAll preserves ticket order under concurrency', async () => {
+  const tickets = Array.from({ length: 8 }, (_, i) => ({ id: `t${i}`, subject: '', date_created: '', tags: [], owner_email: 'x@y' }));
+  const client = {
+    listAgents: async () => [],
+    listTags: async () => [],
+    listTickets: async function* () { for (const t of tickets) yield t; },
+    getTicketMessages: async (id) => {
+      // randomize completion to force out-of-order resolution
+      await new Promise(r => setTimeout(r, Math.random() * 10));
+      return [];
+    },
+  };
+  const result = await downloadAll({ client, from: 'X', maxTickets: 5000, knownIds: new Set(), concurrency: 4 });
+  assert.deepEqual(result.tickets.map(t => t.id), ['t0','t1','t2','t3','t4','t5','t6','t7']);
+});
+
 test('downloadAll honors abort signal mid-download', async () => {
   const ac = new AbortController();
   const tickets = Array.from({ length: 5 }, (_, i) => ({ id: `t${i}`, subject: '', date_created: '', tags: [], owner_email: 'x@y' }));

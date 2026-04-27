@@ -9,9 +9,23 @@ function shouldSkip(ticket, { skippedStatuses, skipDeleted }) {
   return null;
 }
 
+async function processInPool(items, concurrency, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.max(1, concurrency) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 export async function downloadAll({
   client, from, to, maxTickets = 5000, knownIds = new Set(), signal, onProgress = () => {},
   skippedStatuses = SKIPPED_STATUSES_DEFAULT, skipDeleted = true,
+  concurrency = 5,
 } = {}) {
   onProgress({ phase: 'meta', step: 'agents+tags' });
   const [agents, tags] = await Promise.all([client.listAgents(), client.listTags()]);
@@ -38,18 +52,21 @@ export async function downloadAll({
     onProgress({ phase: 'tickets', count: collected.length, skips });
   }
 
-  const enriched = [];
-  for (let i = 0; i < collected.length; i++) {
-    if (signal?.aborted) { cancelled = true; break; }
-    const t = collected[i];
+  let done = 0;
+  const enrichedSparse = await processInPool(collected, concurrency, async (t) => {
+    if (signal?.aborted) { cancelled = true; return null; }
     let msg = null;
     try {
       const groups = await client.getTicketMessages(t.id);
       msg = firstCustomerMessage(groups, agentIds);
     } catch { msg = null; }
-    enriched.push(enrichTicket(t, msg, tagIdToName));
-    onProgress({ phase: 'messages', done: i + 1, total: collected.length });
-  }
+    if (signal?.aborted) { cancelled = true; return null; }
+    const out = enrichTicket(t, msg, tagIdToName);
+    done += 1;
+    onProgress({ phase: 'messages', done, total: collected.length });
+    return out;
+  });
+  const enriched = enrichedSparse.filter(Boolean);
 
   return {
     tickets: enriched,
