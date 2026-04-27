@@ -181,7 +181,8 @@ export function createApp({ clientFactory, storageFactory } = {}) {
   return app;
 }
 
-if (import.meta.url === `file://${process.argv[1].replace(/\\/g, '/')}`) {
+import { pathToFileURL } from 'node:url';
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const port = Number(process.env.PORT) || 3001;
   createApp().listen(port, () => console.log(`LA Analyzer on http://localhost:${port}`));
 }
