@@ -32,13 +32,20 @@ export function createApp({ clientFactory, storageFactory } = {}) {
       const agents = await client.listAgents();
       res.json({ ok: true, agent_count: Array.isArray(agents) ? agents.length : 0 });
     } catch (e) {
-      res.status(400).json({ ok: false, status: e.status, message: e.message });
+      const status = (e.status >= 400 && e.status < 600) ? e.status : 502;
+      res.status(status).json({ ok: false, status: e.status, message: e.message });
     }
   });
 
   app.post('/api/save-config', async (req, res) => {
     const { baseUrl, apiKey, periodDays } = req.body ?? {};
     if (!baseUrl || !apiKey) return res.status(400).json({ ok: false, message: 'baseUrl a apiKey sú povinné' });
+    if (/[\r\n]/.test(baseUrl) || /[\r\n]/.test(apiKey)) {
+      return res.status(400).json({ ok: false, message: 'baseUrl a apiKey nemôžu obsahovať nové riadky' });
+    }
+    if (!/^https?:\/\/[A-Za-z0-9._:\/\-]+$/.test(baseUrl)) {
+      return res.status(400).json({ ok: false, message: 'baseUrl musí byť platná HTTP(S) URL' });
+    }
     const env = `LA_API_URL=${baseUrl}\nLA_API_KEY=${apiKey}\nPORT=${process.env.PORT || 3001}\nDEFAULT_PERIOD_DAYS=${periodDays || process.env.DEFAULT_PERIOD_DAYS || 180}\n`;
     await fs.writeFile(ENV_FILE, env, 'utf8');
     process.env.LA_API_URL = baseUrl;
@@ -68,7 +75,9 @@ export function createApp({ clientFactory, storageFactory } = {}) {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('X-Accel-Buffering', 'no');
-    const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    const send = (event, data) => {
+      if (!res.writableEnded && !res.destroyed) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
 
     const ac = new AbortController();
     res.on('close', () => { if (!res.writableEnded) ac.abort(); });
@@ -133,8 +142,10 @@ export function createApp({ clientFactory, storageFactory } = {}) {
     const data = await storage.loadLatest();
     if (!data) return res.status(404).json({ ok: false, message: 'no cache' });
     let stopwords = new Set();
-    try { stopwords = await loadStopwords(stopwordsPath); } catch {}
-    const tickets = data.tickets;
+    try { stopwords = await loadStopwords(stopwordsPath); } catch (e) { console.warn(`[analysis] loadStopwords failed: ${e.message}`); }
+    const cats = (await storage.readJson('tag-categories.json'))?.categories ?? {};
+    const ignoredTagIds = new Set(Object.entries(cats).filter(([, v]) => v === 'ignored').map(([k]) => k));
+    const tickets = data.tickets.filter(t => !(t.tag_ids ?? []).some(id => ignoredTagIds.has(id)));
     const { rules, edge_cases } = generateAllRules(tickets, { stopwords });
     res.json({
       distribution: distributionStats(tickets),
@@ -144,6 +155,7 @@ export function createApp({ clientFactory, storageFactory } = {}) {
       keyword_stats: keywordStats(tickets, { stopwords, topN: 30 }),
       rules,
       edge_cases,
+      filtered_out: data.tickets.length - tickets.length,
     });
   });
 
@@ -152,8 +164,11 @@ export function createApp({ clientFactory, storageFactory } = {}) {
     const data = await storage.loadLatest();
     if (!data) { res.status(404).json({ ok: false, message: 'no cache' }); return null; }
     let stopwords = new Set();
-    try { stopwords = await loadStopwords(stopwordsPath); } catch {}
-    return { tickets: data.tickets, ...generateAllRules(data.tickets, { stopwords }) };
+    try { stopwords = await loadStopwords(stopwordsPath); } catch (e) { console.warn(`[export] loadStopwords failed: ${e.message}`); }
+    const cats = (await storage.readJson('tag-categories.json'))?.categories ?? {};
+    const ignoredTagIds = new Set(Object.entries(cats).filter(([, v]) => v === 'ignored').map(([k]) => k));
+    const tickets = data.tickets.filter(t => !(t.tag_ids ?? []).some(id => ignoredTagIds.has(id)));
+    return { tickets, ...generateAllRules(tickets, { stopwords }) };
   }
 
   app.get('/api/export/rules.json', async (_req, res) => {
