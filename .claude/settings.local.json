@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -w \"\\\\n---HTTP %{http_code}---\\\\n\" -H \"apikey: 0qq4hmludlugsumsqqz5lsdxxbjn3lkex2fiqlp78o\" -H \"Accept: application/json\" \"https://creativesites.ladesk.com/api/v3/agents/me\")",
+      "Bash(curl -s -w \"\\\\n---HTTP %{http_code}---\\\\n\" -H \"apikey: 0qq4hmludlugsumsqqz5lsdxxbjn3lkex2fiqlp78o\" -H \"Accept: application/json\" \"https://creativesites.ladesk.com/api/v3/agents?_perPage=2\")",
+      "Bash(curl -s -w \"\\\\n---HTTP %{http_code}---\\\\n\" -H \"apikey: 0qq4hmludlugsumsqqz5lsdxxbjn3lkex2fiqlp78o\" -H \"Accept: application/json\" \"https://creativesites.ladesk.com/api/v3/conversations?_perPage=1\")",
+      "Bash(curl -s -w \"\\\\n---HTTP %{http_code}---\\\\n\" -H \"apikey: 0qq4hmludlugsumsqqz5lsdxxbjn3lkex2fiqlp78o\" -H \"Accept: application/json\" \"https://creativesites.ladesk.com/api/v3/tags?_perPage=200\")",
+      "Bash(curl -s -w \"\\\\n---HTTP %{http_code}---\\\\n\" -H \"apikey: 0qq4hmludlugsumsqqz5lsdxxbjn3lkex2fiqlp78o\" -H \"Accept: application/json\" \"https://creativesites.ladesk.com/api/v3/tickets?_perPage=1\")",
+      "Bash(curl -s -w \"\\\\n---HTTP %{http_code}---\\\\n\" -H \"apikey: 0qq4hmludlugsumsqqz5lsdxxbjn3lkex2fiqlp78o\" -H \"Accept: application/json\" \"https://creativesites.ladesk.com/api/v3/\")",
+      "Bash(curl -s -w \"\\\\n---HTTP %{http_code}---\\\\n\" -H \"apikey: 0qq4hmludlugsumsqqz5lsdxxbjn3lkex2fiqlp78o\" -H \"Accept: application/json\" \"https://creativesites.ladesk.com/api/v3/tags\")",
+      "Bash(curl -s -w \"\\\\n---HTTP %{http_code}---\\\\n\" -H \"apikey: 0qq4hmludlugsumsqqz5lsdxxbjn3lkex2fiqlp78o\" -H \"Accept: application/json\" \"https://creativesites.ladesk.com/api/v3/tickets/576tg0mz/messages\")",
+      "Bash(curl -s -w \"\\\\n---HTTP %{http_code}---\\\\n\" -H \"apikey: 0qq4hmludlugsumsqqz5lsdxxbjn3lkex2fiqlp78o\" -H \"Accept: application/json\" 'https://creativesites.ladesk.com/api/v3/tickets?_perPage=2&_sortDir=DESC&_sortField=date_created')",
+      "Bash(curl -s -I -H \"apikey: 0qq4hmludlugsumsqqz5lsdxxbjn3lkex2fiqlp78o\" \"https://creativesites.ladesk.com/api/v3/tickets?_perPage=1\")",
+      "WebFetch(domain:creativesites.ladesk.com)",
+      "Bash(curl -s -D - -H \"apikey: 0qq4hmludlugsumsqqz5lsdxxbjn3lkex2fiqlp78o\" -H \"Accept: application/json\" 'https://creativesites.ladesk.com/api/v3/tickets?_perPage=1&_totalCount=true')",
+      "Bash(curl -s -G -H \"apikey: 0qq4hmludlugsumsqqz5lsdxxbjn3lkex2fiqlp78o\" -H \"Accept: application/json\" --data-urlencode '_filters=[{\"date_created\":\">=\",\"_value\":\"2026-04-20 00:00:00\"}]' --data-urlencode '_perPage=2' --data-urlencode '_sortField=date_created' --data-urlencode '_sortDir=DESC' 'https://creativesites.ladesk.com/api/v3/tickets')",
+      "Bash(curl -s -G -H \"apikey: 0qq4hmludlugsumsqqz5lsdxxbjn3lkex2fiqlp78o\" -H \"Accept: application/json\" --data-urlencode '_perPage=1' --data-urlencode 'includeRelated=true' 'https://creativesites.ladesk.com/api/v3/tickets')",
+      "Bash(curl -s -H \"apikey: 0qq4hmludlugsumsqqz5lsdxxbjn3lkex2fiqlp78o\" -H \"Accept: application/json\" 'https://creativesites.ladesk.com/api/v3/tickets/kin1vthj/messages')",
+      "Bash(curl -s -G -H \"apikey: 0qq4hmludlugsumsqqz5lsdxxbjn3lkex2fiqlp78o\" -H \"Accept: application/json\" --data-urlencode '_filters=[{\"created\":\">=\",\"_value\":\"2026-04-25\"}]' --data-urlencode '_perPage=2' 'https://creativesites.ladesk.com/api/v3/tickets')",
+      "Bash(curl -s -G -H 'apikey: 0qq4hmludlugsumsqqz5lsdxxbjn3lkex2fiqlp78o' -H 'Accept: application/json' --data-urlencode _perPage=100 --data-urlencode _page=__TRACKED_VAR__ --data-urlencode '_filters=[{\"created\":\">=\",\"_value\":\"2026-04-20\"}]' https://creativesites.ladesk.com/api/v3/tickets)",
+      "Bash(curl -s -G -H \"apikey: 0qq4hmludlugsumsqqz5lsdxxbjn3lkex2fiqlp78o\" -H \"Accept: application/json\" --data-urlencode '_filters=[[\"date_created\",\">=\",\"2026-04-20\"]]' --data-urlencode '_perPage=3' --data-urlencode '_sortField=date_created' --data-urlencode '_sortDir=DESC' 'https://creativesites.ladesk.com/api/v3/tickets')",
+      "WebFetch(domain:support.liveagent.com)",
+      "Bash(curl -s -G -H \"apikey: 0qq4hmludlugsumsqqz5lsdxxbjn3lkex2fiqlp78o\" -H \"Accept: application/json\" --data-urlencode '_filters=[[\"date_created\",\"D>=\",\"2026-04-20 00:00:00\"]]' --data-urlencode '_perPage=2' 'https://creativesites.ladesk.com/api/v3/tickets')"
+    ]
+  }
+}
