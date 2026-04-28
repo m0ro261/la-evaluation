@@ -96,8 +96,8 @@ const CLASSES_FOR_KW = ['ZP', 'TP', 'BUG', 'URGENT_BUG'];
 
 function extractTerms(rawTokens, stopwords) {
   // Unigrams: drop stopwords entirely.
-  // Bigrams: keep if at least ONE token is non-stopword (so "ako nastaviť" passes,
-  // pure-stopword pairs like "v tom" are filtered).
+  // Bigrams: keep if at least ONE token is non-stopword.
+  // Trigrams: keep if at least ONE token is non-stopword.
   const unigrams = [];
   for (const t of rawTokens) if (!stopwords.has(t)) unigrams.push(t);
   const bigrams = [];
@@ -106,7 +106,13 @@ function extractTerms(rawTokens, stopwords) {
     if (stopwords.has(a) && stopwords.has(b)) continue;
     bigrams.push(`${a} ${b}`);
   }
-  return { unigrams, bigrams };
+  const trigrams = [];
+  for (let i = 0; i < rawTokens.length - 2; i++) {
+    const a = rawTokens[i], b = rawTokens[i + 1], c = rawTokens[i + 2];
+    if (stopwords.has(a) && stopwords.has(b) && stopwords.has(c)) continue;
+    trigrams.push(`${a} ${b} ${c}`);
+  }
+  return { unigrams, bigrams, trigrams };
 }
 
 function buildCounts(tickets, fieldFn, stopwords) {
@@ -161,6 +167,65 @@ function topMixed(counts, cls, topN) {
   // interleaves so callers iterating sequentially still see the strongest
   // items first.
   return [...uni, ...bi].sort((a, b) => b.g2 - a.g2);
+}
+
+// Phrase explorer: rank phrases (uni / bi / tri) by RAW total frequency
+// across ALL tickets (classified + unclassified), with class distribution.
+// This is the discovery counterpart to keywordStats — it surfaces patterns
+// that humans recognize but G² may filter out (low-count phrases, evenly
+// split classes, generic question patterns, etc.).
+export function phraseExplorer(tickets, { stopwords = new Set(), minCount = 5, topN = 200, includeUnclassified = true } = {}) {
+  // counts[term] = { total, byClass: {ZP, TP, BUG, URGENT_BUG}, unclassified, n }
+  const counts = new Map();
+  const ensure = (term, n) => {
+    let c = counts.get(term);
+    if (!c) { c = { total: 0, byClass: { ZP: 0, TP: 0, BUG: 0, URGENT_BUG: 0 }, unclassified: 0, n }; counts.set(term, c); }
+    return c;
+  };
+  const inc = (term, ticket, n) => {
+    const c = ensure(term, n);
+    c.total += 1;
+    if (ticket.classification && c.byClass[ticket.classification] !== undefined) c.byClass[ticket.classification] += 1;
+    else c.unclassified += 1;
+  };
+  for (const t of tickets) {
+    if (!includeUnclassified && !t.classification) continue;
+    const subj = stripSubjectPrefix(t.subject || '');
+    const body = stripSignature(t.first_customer_message?.plain_text || '');
+    for (const field of [subj, body]) {
+      const tokens = tokenize(field);
+      const { unigrams, bigrams, trigrams } = extractTerms(tokens, stopwords);
+      // De-dup within the same ticket so a word repeated 5x in the same ticket
+      // counts once toward "X tickets contain this phrase". That matches the
+      // semantics of LA Rules ('subject contains X' fires once per ticket).
+      const seen = new Set();
+      for (const u of unigrams) { if (!seen.has(u)) { seen.add(u); inc(u, t, 1); } }
+      for (const b of bigrams)  { if (!seen.has(b)) { seen.add(b); inc(b, t, 2); } }
+      for (const tri of trigrams) { if (!seen.has(tri)) { seen.add(tri); inc(tri, t, 3); } }
+    }
+  }
+  const rows = [];
+  for (const [term, c] of counts) {
+    if (c.total < minCount) continue;
+    const labeled = c.byClass.ZP + c.byClass.TP + c.byClass.BUG + c.byClass.URGENT_BUG;
+    let dominant = null, dominantCount = 0;
+    for (const cls of ['ZP', 'TP', 'BUG', 'URGENT_BUG']) {
+      if (c.byClass[cls] > dominantCount) { dominantCount = c.byClass[cls]; dominant = cls; }
+    }
+    const dominantPct = labeled === 0 ? 0 : Math.round((dominantCount / labeled) * 1000) / 10;
+    rows.push({
+      phrase: term,
+      n: c.n,
+      total: c.total,
+      labeled,
+      unclassified: c.unclassified,
+      by_class: c.byClass,
+      dominant,
+      dominant_pct: dominantPct,
+    });
+  }
+  rows.sort((a, b) => b.total - a.total);
+  return rows.slice(0, topN);
 }
 
 export function keywordStats(tickets, { stopwords, topN = 30 } = {}) {

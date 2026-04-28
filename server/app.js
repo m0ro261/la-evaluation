@@ -6,7 +6,7 @@ import 'dotenv/config';
 import { createClient } from './la-client.js';
 import { createStorage } from './storage.js';
 import { downloadAll } from './download.js';
-import { distributionStats, weeklyTrend, topCustomers, topDomains, keywordStats } from './analyzer.js';
+import { distributionStats, weeklyTrend, topCustomers, topDomains, keywordStats, phraseExplorer } from './analyzer.js';
 import { generateAllRules } from './rule-generator.js';
 import { loadStopwords } from './text-utils.js';
 import { rulesToMarkdown, ticketsToCsv } from './exporter.js';
@@ -135,6 +135,21 @@ export function createApp({ clientFactory, storageFactory } = {}) {
     const payload = { version: 1, updated_at: new Date().toISOString(), categories: req.body?.categories ?? {} };
     await storage.writeJson('tag-categories.json', payload);
     res.json({ ok: true });
+  });
+
+  app.get('/api/phrases', async (req, res) => {
+    const storage = makeStorage(dataDir);
+    const data = await storage.loadLatest();
+    if (!data) return res.status(404).json({ ok: false, message: 'no cache' });
+    let stopwords = new Set();
+    try { stopwords = await loadStopwords(stopwordsPath); } catch (e) { console.warn(`[phrases] loadStopwords failed: ${e.message}`); }
+    const cats = (await storage.readJson('tag-categories.json'))?.categories ?? {};
+    const ignoredTagIds = new Set(Object.entries(cats).filter(([, v]) => v === 'ignored').map(([k]) => k));
+    const tickets = data.tickets.filter(t => !(t.tag_ids ?? []).some(id => ignoredTagIds.has(id)));
+    const minCount = Math.max(1, Number(req.query.minCount) || 5);
+    const topN = Math.min(1000, Math.max(10, Number(req.query.topN) || 300));
+    const phrases = phraseExplorer(tickets, { stopwords, minCount, topN });
+    res.json({ ok: true, phrases, total_tickets: tickets.length });
   });
 
   app.get('/api/analysis', async (_req, res) => {

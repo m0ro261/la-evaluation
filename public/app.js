@@ -76,7 +76,56 @@ async function loadDashboard() {
   renderDomains(a);
   renderKeywords(a);
   renderRules(a);
+  renderPhrases(a);
   renderEdges(a);
+}
+
+let _phraseState = { search: '', filterN: 'all', minCount: 5 };
+
+async function renderPhrases() {
+  const el = document.getElementById('phrases');
+  el.innerHTML = `<h3>H · Frekventné frázy (Phrase Explorer)</h3><p class="hint">Načítavam…</p>`;
+  const res = await fetch(`/api/phrases?minCount=${_phraseState.minCount}&topN=300`);
+  if (!res.ok) { el.innerHTML = `<h3>H · Frekventné frázy</h3><p class="hint">Najprv stiahnite tickety.</p>`; return; }
+  const { phrases } = await res.json();
+  const filtered = phrases.filter(p => {
+    if (_phraseState.filterN !== 'all' && p.n !== Number(_phraseState.filterN)) return false;
+    if (_phraseState.search && !p.phrase.includes(_phraseState.search.toLowerCase())) return false;
+    return true;
+  });
+  const head = `<thead><tr><th>fráza</th><th>n</th><th>spolu</th><th>ZP</th><th>TP</th><th>BUG</th><th>URGENT</th><th>bez kl.</th><th>dominant</th></tr></thead>`;
+  const body = filtered.map(p => `<tr>
+    <td><code>${escapeHtml(p.phrase)}</code></td>
+    <td>${p.n}</td>
+    <td><strong>${p.total}</strong></td>
+    <td>${p.by_class.ZP}</td>
+    <td>${p.by_class.TP}</td>
+    <td>${p.by_class.BUG}</td>
+    <td>${p.by_class.URGENT_BUG}</td>
+    <td>${p.unclassified}</td>
+    <td>${p.dominant ? `<span class="badge ${p.dominant}">${p.dominant}</span> ${p.dominant_pct}%` : '<span class="hint">—</span>'}</td>
+  </tr>`).join('');
+  el.innerHTML = `
+    <h3>H · Frekventné frázy (Phrase Explorer)</h3>
+    <p class="hint">Top fráz zoradené podľa raw frekvencie (uni / bi / trigramy). Zobrazené ${filtered.length} z ${phrases.length} (po filtri). Použi na prieskum patternov, ktoré algoritmus nezachytil.</p>
+    <div class="row" style="margin-bottom: 12px; gap: 8px;">
+      <input type="search" id="phr-search" placeholder="hľadať frázu..." value="${escapeHtml(_phraseState.search)}" style="flex: 1; max-width: 280px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px;">
+      <select id="phr-n" style="padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px;">
+        <option value="all"${_phraseState.filterN==='all'?' selected':''}>všetky</option>
+        <option value="1"${_phraseState.filterN==='1'?' selected':''}>unigramy (1 slovo)</option>
+        <option value="2"${_phraseState.filterN==='2'?' selected':''}>bigramy (2 slová)</option>
+        <option value="3"${_phraseState.filterN==='3'?' selected':''}>trigramy (3 slová)</option>
+      </select>
+      <label style="display: flex; align-items: center; gap: 6px;">min. výskyt
+        <input type="number" id="phr-min" min="1" max="100" value="${_phraseState.minCount}" style="width: 60px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px;">
+      </label>
+    </div>
+    <div style="max-height: 600px; overflow: auto;">
+      <table>${head}<tbody>${body}</tbody></table>
+    </div>`;
+  document.getElementById('phr-search').addEventListener('input', (e) => { _phraseState.search = e.target.value; renderPhrases(); });
+  document.getElementById('phr-n').addEventListener('change', (e) => { _phraseState.filterN = e.target.value; renderPhrases(); });
+  document.getElementById('phr-min').addEventListener('change', (e) => { _phraseState.minCount = Math.max(1, Number(e.target.value) || 5); renderPhrases(); });
 }
 
 function pct(n, total) { return total === 0 ? 0 : Math.round((n / total) * 1000) / 10; }
