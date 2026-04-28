@@ -61,7 +61,9 @@ Vráť IBA validný JSON v presne tomto formáte (nič iné, žiadny markdown):
 
 export function createAiClient(apiKey) {
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY required');
-  return new Anthropic({ apiKey });
+  // maxRetries default is 2 — bump to 6 with the SDK's built-in exponential
+  // backoff so transient 429s don't fail at high concurrency.
+  return new Anthropic({ apiKey, maxRetries: 6 });
 }
 
 function extractJson(text) {

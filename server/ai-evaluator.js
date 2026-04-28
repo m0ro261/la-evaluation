@@ -2,12 +2,19 @@ import { classifyTicket } from './ai-classifier.js';
 
 const CLASSES = ['ZP', 'TP', 'BUG', 'URGENT_BUG'];
 
-async function processInPool(items, concurrency, fn) {
+async function processInPool(items, concurrency, fn, { throttleMs = 0 } = {}) {
   const results = new Array(items.length);
   let next = 0;
+  let lastStart = 0;
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const workers = Array.from({ length: Math.max(1, concurrency) }, async () => {
     while (next < items.length) {
       const i = next++;
+      if (throttleMs > 0) {
+        const wait = throttleMs - (Date.now() - lastStart);
+        if (wait > 0) await sleep(wait);
+        lastStart = Date.now();
+      }
       results[i] = await fn(items[i], i);
     }
   });
@@ -19,7 +26,11 @@ export async function evaluateTickets({
   client,
   tickets,
   model = 'claude-haiku-4-5',
-  concurrency = 5,
+  // Anthropic's default tier rate limit is ~50 req/min; concurrency of 2 with
+  // a small throttle between calls keeps us under it. Higher concurrency just
+  // burns budget on retries.
+  concurrency = 2,
+  throttleMs = 250,
   signal,
   onProgress = () => {},
   onPartial = null, // ({results, usage}) — invoked every checkpointEvery to allow mid-run save
@@ -34,6 +45,7 @@ export async function evaluateTickets({
   const freshSparse = new Array(todo.length);
 
   const fresh = await processInPool(todo, concurrency, async (ticket, idx) => {
+    // throttleMs handled inside processInPool
     if (signal?.aborted) return null;
     let entry;
     try {
@@ -75,7 +87,7 @@ export async function evaluateTickets({
       try { await onPartial({ results: partial, usage, errors, error_kinds: { ...errorKinds } }); } catch {}
     }
     return entry;
-  });
+  }, { throttleMs });
 
   const all = [...existingResults.values(), ...fresh.filter(Boolean)];
   return { results: all, usage, errors, error_kinds: errorKinds, processed: done, skipped_existing: existingResults.size };
