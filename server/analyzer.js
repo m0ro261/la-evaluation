@@ -94,17 +94,38 @@ export function gSquared(a, b, c, d) {
 
 const CLASSES_FOR_KW = ['ZP', 'TP', 'BUG', 'URGENT_BUG'];
 
-function buildCounts(tickets, fieldFn, stopwords) {
-  const perClass = Object.fromEntries(CLASSES_FOR_KW.map(c => [c, new Map()]));
-  const totalsPerClass = Object.fromEntries(CLASSES_FOR_KW.map(c => [c, 0]));
-  for (const t of tickets) {
-    if (!t.classification || !perClass[t.classification]) continue;
-    const tokens = tokenize(fieldFn(t)).filter(w => !stopwords.has(w));
-    totalsPerClass[t.classification] += tokens.length;
-    const m = perClass[t.classification];
-    for (const w of tokens) m.set(w, (m.get(w) ?? 0) + 1);
+function extractTerms(rawTokens, stopwords) {
+  // Unigrams: drop stopwords entirely.
+  // Bigrams: keep if at least ONE token is non-stopword (so "ako nastaviť" passes,
+  // pure-stopword pairs like "v tom" are filtered).
+  const unigrams = [];
+  for (const t of rawTokens) if (!stopwords.has(t)) unigrams.push(t);
+  const bigrams = [];
+  for (let i = 0; i < rawTokens.length - 1; i++) {
+    const a = rawTokens[i], b = rawTokens[i + 1];
+    if (stopwords.has(a) && stopwords.has(b)) continue;
+    bigrams.push(`${a} ${b}`);
   }
-  return { perClass, totalsPerClass };
+  return { unigrams, bigrams };
+}
+
+function buildCounts(tickets, fieldFn, stopwords) {
+  const perClassUni = Object.fromEntries(CLASSES_FOR_KW.map(c => [c, new Map()]));
+  const totalsUni = Object.fromEntries(CLASSES_FOR_KW.map(c => [c, 0]));
+  const perClassBi = Object.fromEntries(CLASSES_FOR_KW.map(c => [c, new Map()]));
+  const totalsBi = Object.fromEntries(CLASSES_FOR_KW.map(c => [c, 0]));
+  for (const t of tickets) {
+    if (!t.classification || !perClassUni[t.classification]) continue;
+    const raw = tokenize(fieldFn(t));
+    const { unigrams, bigrams } = extractTerms(raw, stopwords);
+    totalsUni[t.classification] += unigrams.length;
+    const mu = perClassUni[t.classification];
+    for (const w of unigrams) mu.set(w, (mu.get(w) ?? 0) + 1);
+    totalsBi[t.classification] += bigrams.length;
+    const mb = perClassBi[t.classification];
+    for (const w of bigrams) mb.set(w, (mb.get(w) ?? 0) + 1);
+  }
+  return { perClassUni, totalsUni, perClassBi, totalsBi };
 }
 
 function topDifferential(perClass, totalsPerClass, cls, topN) {
@@ -127,6 +148,14 @@ function topDifferential(perClass, totalsPerClass, cls, topN) {
   return out.sort((x, y) => y.g2 - x.g2).slice(0, topN);
 }
 
+function topMixed(counts, cls, topN) {
+  // Compute G² separately for unigrams and bigrams (different denominators),
+  // tag each entry with `n` (1 or 2), then merge by G² descending.
+  const uni = topDifferential(counts.perClassUni, counts.totalsUni, cls, topN).map(x => ({ ...x, n: 1 }));
+  const bi  = topDifferential(counts.perClassBi,  counts.totalsBi,  cls, topN).map(x => ({ ...x, n: 2 }));
+  return [...uni, ...bi].sort((a, b) => b.g2 - a.g2).slice(0, topN);
+}
+
 export function keywordStats(tickets, { stopwords, topN = 30 } = {}) {
   const sw = stopwords ?? new Set();
   const subjectCounts = buildCounts(tickets, t => stripSubjectPrefix(t.subject || ''), sw);
@@ -134,8 +163,8 @@ export function keywordStats(tickets, { stopwords, topN = 30 } = {}) {
   const out = {};
   for (const cls of CLASSES_FOR_KW) {
     out[cls] = {
-      subject: topDifferential(subjectCounts.perClass, subjectCounts.totalsPerClass, cls, topN),
-      body: topDifferential(bodyCounts.perClass, bodyCounts.totalsPerClass, cls, topN),
+      subject: topMixed(subjectCounts, cls, topN),
+      body: topMixed(bodyCounts, cls, topN),
     };
   }
   return out;

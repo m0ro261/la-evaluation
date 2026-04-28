@@ -65,7 +65,49 @@ test('keywordStats returns top differential words per class', () => {
   const stopwords = new Set();
   const out = keywordStats(tickets, { stopwords, topN: 5 });
   assert.ok(out.BUG.subject.length >= 1);
-  assert.equal(out.BUG.subject[0].word, 'nefunguje');
+  // top entry can now be a bigram (e.g. 'nefunguje admin') or unigram, both should reference 'nefunguje'
+  assert.match(out.BUG.subject[0].word, /nefunguje/);
+  // every entry has `n` field (1 = unigram, 2 = bigram)
+  assert.ok([1, 2].includes(out.BUG.subject[0].n));
   // ZP top should not be 'nefunguje'
   assert.ok(!out.ZP.subject.find(w => w.word === 'nefunguje'));
+});
+
+test('keywordStats surfaces bigrams when phrase is class-specific', () => {
+  // 'potrebujem pomoc' appears in 3 ZP tickets, 0 elsewhere — should rank
+  const tickets = [
+    { classification: 'ZP', subject: 'potrebujem pomoc s nastavením', first_customer_message: { plain_text: '' } },
+    { classification: 'ZP', subject: 'potrebujem pomoc rýchlo', first_customer_message: { plain_text: '' } },
+    { classification: 'ZP', subject: 'prosím potrebujem pomoc', first_customer_message: { plain_text: '' } },
+    { classification: 'BUG', subject: 'objednávka nefunguje', first_customer_message: { plain_text: '' } },
+    { classification: 'BUG', subject: 'platba nefunguje', first_customer_message: { plain_text: '' } },
+    { classification: 'TP', subject: 'preklad slovník import', first_customer_message: { plain_text: '' } },
+    { classification: 'TP', subject: 'design úprava menu', first_customer_message: { plain_text: '' } },
+  ];
+  const stopwords = new Set();
+  const out = keywordStats(tickets, { stopwords, topN: 10 });
+  const zpBigrams = out.ZP.subject.filter(w => w.n === 2);
+  assert.ok(zpBigrams.find(w => w.word === 'potrebujem pomoc'),
+    `expected ZP bigrams to include "potrebujem pomoc", got: ${zpBigrams.map(w => w.word).join(', ')}`);
+});
+
+test('keywordStats with stopwords keeps bigrams that combine stopword + content word', () => {
+  // 'ako' is a stopword. 'ako nastaviť' bigram should still pass because 'nastaviť' is content.
+  const tickets = [
+    { classification: 'ZP', subject: 'ako nastaviť doménu', first_customer_message: { plain_text: '' } },
+    { classification: 'ZP', subject: 'ako nastaviť menu', first_customer_message: { plain_text: '' } },
+    { classification: 'ZP', subject: 'ako nastaviť kategóriu', first_customer_message: { plain_text: '' } },
+    { classification: 'BUG', subject: 'objednávka chyba', first_customer_message: { plain_text: '' } },
+    { classification: 'BUG', subject: 'platba chyba', first_customer_message: { plain_text: '' } },
+    { classification: 'TP', subject: 'preklad import', first_customer_message: { plain_text: '' } },
+    { classification: 'TP', subject: 'design úprava', first_customer_message: { plain_text: '' } },
+  ];
+  const stopwords = new Set(['ako']);
+  const out = keywordStats(tickets, { stopwords, topN: 10 });
+  // unigram 'ako' must be filtered (it's a stopword)
+  assert.ok(!out.ZP.subject.find(w => w.word === 'ako' && w.n === 1));
+  // but bigram starting with 'ako' is allowed
+  const akoNastav = out.ZP.subject.find(w => w.word === 'ako nastaviť');
+  assert.ok(akoNastav, 'expected bigram "ako nastaviť" in ZP subject');
+  assert.equal(akoNastav.n, 2);
 });
