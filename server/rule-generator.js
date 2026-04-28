@@ -92,39 +92,46 @@ function dedupBySupersetCoverage(rules) {
   return rules.filter((_, i) => keep[i]);
 }
 
+// Per-class size → proportional floors. Ticket counts vary wildly across
+// classes (ZP 1486 vs URGENT 52 in real data). A flat minTP would mean
+// either nothing generates for small classes, or a flood of noise from
+// the dominant class. Scale by class size with safety floors.
+function minTpForClassAndGram(classSize, n) {
+  const proportional = (rate, floor) => Math.max(floor, Math.ceil(classSize * rate));
+  if (n === 3) return proportional(0.015, 3);   // ~1.5% of class, min 3
+  if (n === 2) return proportional(0.025, 4);   // ~2.5%, min 4
+  return proportional(0.035, 6);                // unigrams: ~3.5%, min 6
+}
+
 export function generateKeywordRules(tickets, {
   stopwords,
-  minConfidence = 70,
+  minConfidence = 65,
   minSubjectCoverage = 0.3,
   minBodyCoverage = 0.2,
-  minTruePositivesUnigram = 10,
-  minTruePositivesBigram = 6,
-  minTruePositivesTrigram = 4,
-  // Backwards-compat: tests that pass `minTruePositives` get applied to all.
+  // Backwards-compat: tests that pass an explicit `minTruePositives` get
+  // that flat number for all classes/grams.
   minTruePositives,
   topN = 60,
 } = {}) {
   const stats = keywordStats(tickets, { stopwords: stopwords ?? new Set(), topN });
+  const classCounts = { ZP: 0, TP: 0, BUG: 0, URGENT_BUG: 0 };
+  for (const t of tickets) if (classCounts[t.classification] !== undefined) classCounts[t.classification] += 1;
   const rules = [];
-  const minTpFor = (entry) => minTruePositives ?? (
-    entry.n === 3 ? minTruePositivesTrigram :
-    entry.n === 2 ? minTruePositivesBigram :
-    minTruePositivesUnigram
-  );
-  const passes = (r, minCov, entry) =>
+  const minTpFor = (entry, cls) => minTruePositives ?? minTpForClassAndGram(classCounts[cls] ?? 0, entry.n);
+  const passes = (r, minCov, entry, cls) =>
     r.stats.confidence_percent >= minConfidence
     && r.stats.coverage_percent >= minCov
-    && r.stats.true_positives >= minTpFor(entry);
+    && r.stats.true_positives >= minTpFor(entry, cls);
   for (const cls of CLASSES) {
     for (const entry of stats[cls].subject) {
       const r = makeRule('keyword_subject', 'subject', entry.word, cls);
       r.stats = scoreRule(r, tickets);
-      if (passes(r, minSubjectCoverage, entry)) rules.push(r);
+      if (passes(r, minSubjectCoverage, entry, cls)) rules.push(r);
     }
     for (const entry of stats[cls].body) {
       const r = makeRule('keyword_body', 'body', entry.word, cls);
       r.stats = scoreRule(r, tickets);
-      if (passes(r, minBodyCoverage, entry)) rules.push(r);
+      if (passes(r, minBodyCoverage, entry, cls)) rules.push(r);
     }
   }
   return dedupBySupersetCoverage(rules).sort((a, b) => b.stats.coverage_percent - a.stats.coverage_percent || b.stats.confidence_percent - a.stats.confidence_percent);
