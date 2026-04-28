@@ -66,11 +66,15 @@ export function createApp({ clientFactory, storageFactory } = {}) {
   const makeStorage = storageFactory ?? (() => createStorage(dataDir));
 
   app.post('/api/download', async (req, res) => {
-    const { from, to, maxTickets } = req.body ?? {};
+    const { from, to, maxTickets, skipDeleted, skippedStatuses } = req.body ?? {};
     const baseUrl = process.env.LA_API_URL;
     const apiKey = process.env.LA_API_KEY;
     if (!baseUrl || !apiKey) return res.status(400).json({ ok: false, message: 'API config missing — uložte ho cez /api/save-config' });
     if (!from) return res.status(400).json({ ok: false, message: 'from je povinné' });
+    const statusFilter = Array.isArray(skippedStatuses)
+      ? new Set(skippedStatuses.map(s => String(s).trim()).filter(Boolean))
+      : undefined;
+    const skipDeletedFlag = skipDeleted === undefined ? undefined : Boolean(skipDeleted);
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -93,6 +97,8 @@ export function createApp({ clientFactory, storageFactory } = {}) {
         client, from, to, maxTickets: maxTickets || 5000, knownIds,
         signal: ac.signal,
         onProgress: ev => send('progress', ev),
+        ...(statusFilter ? { skippedStatuses: statusFilter } : {}),
+        ...(skipDeletedFlag !== undefined ? { skipDeleted: skipDeletedFlag } : {}),
       });
 
       // merge with existing tickets if dedup was active

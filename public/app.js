@@ -448,10 +448,14 @@ dlForm.addEventListener('submit', async (e) => {
   dlLog.textContent = '';
   dlStart.disabled = true; dlCancel.disabled = false;
   try {
+    const statusList = String(fd.get('skippedStatuses') || '')
+      .split(',').map(s => s.trim()).filter(Boolean);
     await streamDownload({
       from: `${fd.get('from')} 00:00:00`,
       to: fd.get('to') ? `${fd.get('to')} 23:59:59` : null,
       maxTickets: Number(fd.get('maxTickets')) || 5000,
+      skipDeleted: fd.get('skipDeleted') === 'on',
+      skippedStatuses: statusList,
     });
   } catch (e) {
     if (e.name !== 'AbortError') logLine(`Chyba: ${e.message}`);

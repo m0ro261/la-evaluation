@@ -37,7 +37,18 @@
       <form id="download-form">
         <label>Od <input name="from" type="date" required></label>
         <label>Do <input name="to" type="date"></label>
-        <label>Max ticketov <input name="maxTickets" type="number" value="5000"></label>
+        <label>Max ticketov <input name="maxTickets" type="number" value="10000"></label>
+        <fieldset style="border:1px solid var(--line); padding:12px; margin:12px 0; max-width:560px;">
+          <legend style="padding:0 8px; color:var(--muted); font-size:13px;">Filtre pri sťahovaní (preskočia sa, do cache nepôjdu)</legend>
+          <label style="display:flex; align-items:center; gap:8px;">
+            <input name="skipDeleted" type="checkbox" checked> Vymazané tickety (date_deleted nie je prázdne)
+          </label>
+          <label style="display:block; margin-top:8px;">
+            Statusy na preskočenie (čiarkou oddelené, case-sensitive)
+            <input name="skippedStatuses" type="text" value="X" placeholder="napr. X, D, T" style="display:block; margin-top:4px;">
+            <small class="hint">Bežné LA statusy: N=new · B=open · A=answered · R=resolved · X=archived · L=postponed</small>
+          </label>
+        </fieldset>
         <div class="row">
           <button type="submit" id="dl-start">Spustiť sťahovanie</button>
           <button type="button" id="dl-cancel" disabled>Zrušiť</button>
