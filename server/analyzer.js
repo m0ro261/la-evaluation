@@ -229,15 +229,18 @@ export function phraseExplorer(tickets, { stopwords = new Set(), minCount = 5, t
   return rows.slice(0, topN);
 }
 
-export function keywordStats(tickets, { stopwords, topN = 30 } = {}) {
+export function keywordStats(tickets, { stopwords, topN = 30, bodyTopN } = {}) {
   const sw = stopwords ?? new Set();
   const subjectCounts = buildCounts(tickets, t => stripSubjectPrefix(t.subject || ''), sw);
   const bodyCounts = buildCounts(tickets, t => stripSignature(t.first_customer_message?.plain_text || ''), sw);
+  // Body has 10–100x more unique tokens per ticket than subject, so candidates
+  // dilute fast. Default body to a higher topN unless caller overrides.
+  const effectiveBodyTopN = bodyTopN ?? topN * 2;
   const out = {};
   for (const cls of CLASSES_FOR_KW) {
     out[cls] = {
       subject: topMixed(subjectCounts, cls, topN),
-      body: topMixed(bodyCounts, cls, topN),
+      body: topMixed(bodyCounts, cls, effectiveBodyTopN),
     };
   }
   return out;

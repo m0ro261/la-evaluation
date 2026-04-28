@@ -62,6 +62,28 @@ test('stripSignature returns input unchanged when no signature found', () => {
   assert.equal(stripSignature(body), 'Just a question, no signature.');
 });
 
+test('stripSignature removes URLs, ticket codes, emails, dates as noise', () => {
+  const body = 'Visit https://creativesites.sk/admin and order MNQ-QKSRK-311 from peter@x.sk on 28.4.2026.';
+  const out = stripSignature(body);
+  assert.ok(!/https?:\/\//.test(out), `URL leaked: ${out}`);
+  assert.ok(!/MNQ-QKSRK-311/.test(out), `ticket code leaked: ${out}`);
+  assert.ok(!/peter@x\.sk/.test(out), `email leaked: ${out}`);
+  assert.ok(!/28\.4\.2026/.test(out), `date leaked: ${out}`);
+  assert.match(out, /Visit\s+and order\s+from\s+on/);
+});
+
+test('stripSignature cuts at quoted reply markers', () => {
+  // "Dňa <date>" reply marker
+  const body1 = 'Mám otázku ohľadom produktu.\n\nDňa 28.4.2026 napísal Peter:\n> predošlá odpoveď';
+  assert.equal(stripSignature(body1), 'Mám otázku ohľadom produktu.');
+  // English "On <date> ... wrote:" reply marker
+  const body2 = 'I have a question.\n\nOn Mon, Apr 28, 2026 at 10:00 AM, Peter <peter@x.sk> wrote:\n> previous';
+  assert.match(stripSignature(body2), /^I have a question\.$/);
+  // Outlook header pattern
+  const body3 = 'Test message.\nFrom: Peter\nSent: Monday\n> ...';
+  assert.equal(stripSignature(body3), 'Test message.');
+});
+
 test('stripSubjectPrefix removes Re:/Fwd:/Fw:/Odp: chains', () => {
   assert.equal(stripSubjectPrefix('Re: Re: Fwd: Hello'), 'Hello');
   assert.equal(stripSubjectPrefix('FW:    Production down'), 'Production down');
