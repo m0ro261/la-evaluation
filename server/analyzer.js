@@ -116,22 +116,26 @@ function extractTerms(rawTokens, stopwords) {
 }
 
 function buildCounts(tickets, fieldFn, stopwords) {
-  const perClassUni = Object.fromEntries(CLASSES_FOR_KW.map(c => [c, new Map()]));
-  const totalsUni = Object.fromEntries(CLASSES_FOR_KW.map(c => [c, 0]));
-  const perClassBi = Object.fromEntries(CLASSES_FOR_KW.map(c => [c, new Map()]));
-  const totalsBi = Object.fromEntries(CLASSES_FOR_KW.map(c => [c, 0]));
+  const mkPerClass = () => Object.fromEntries(CLASSES_FOR_KW.map(c => [c, new Map()]));
+  const mkTotals = () => Object.fromEntries(CLASSES_FOR_KW.map(c => [c, 0]));
+  const perClassUni = mkPerClass(), totalsUni = mkTotals();
+  const perClassBi = mkPerClass(), totalsBi = mkTotals();
+  const perClassTri = mkPerClass(), totalsTri = mkTotals();
   for (const t of tickets) {
     if (!t.classification || !perClassUni[t.classification]) continue;
     const raw = tokenize(fieldFn(t));
-    const { unigrams, bigrams } = extractTerms(raw, stopwords);
+    const { unigrams, bigrams, trigrams } = extractTerms(raw, stopwords);
     totalsUni[t.classification] += unigrams.length;
     const mu = perClassUni[t.classification];
     for (const w of unigrams) mu.set(w, (mu.get(w) ?? 0) + 1);
     totalsBi[t.classification] += bigrams.length;
     const mb = perClassBi[t.classification];
     for (const w of bigrams) mb.set(w, (mb.get(w) ?? 0) + 1);
+    totalsTri[t.classification] += trigrams.length;
+    const mt = perClassTri[t.classification];
+    for (const w of trigrams) mt.set(w, (mt.get(w) ?? 0) + 1);
   }
-  return { perClassUni, totalsUni, perClassBi, totalsBi };
+  return { perClassUni, totalsUni, perClassBi, totalsBi, perClassTri, totalsTri };
 }
 
 function topDifferential(perClass, totalsPerClass, cls, topN) {
@@ -155,18 +159,15 @@ function topDifferential(perClass, totalsPerClass, cls, topN) {
 }
 
 function topMixed(counts, cls, topN) {
-  // Compute G² separately for unigrams and bigrams. Bigrams have inherently
-  // smaller counts (and thus lower G² values), so a pure G² merge is biased
-  // towards unigrams. To give phrasal patterns a fair shot, reserve roughly
-  // half of the topN slots for bigrams.
-  const uniSlots = Math.ceil(topN / 2);
-  const biSlots = Math.floor(topN / 2);
-  const uni = topDifferential(counts.perClassUni, counts.totalsUni, cls, uniSlots).map(x => ({ ...x, n: 1 }));
-  const bi  = topDifferential(counts.perClassBi,  counts.totalsBi,  cls, biSlots).map(x => ({ ...x, n: 2 }));
-  // Within each list ranking is by G²; the merged output preserves that and
-  // interleaves so callers iterating sequentially still see the strongest
-  // items first.
-  return [...uni, ...bi].sort((a, b) => b.g2 - a.g2);
+  // Compute G² separately for unigrams, bigrams, trigrams. Each n-gram size
+  // has inherently different count magnitudes (and thus G² ranges), so a
+  // pure G² merge is biased towards unigrams. Reserve ~1/3 of slots for
+  // each gram size so phrasal candidates reach the rule generator.
+  const slots = Math.ceil(topN / 3);
+  const uni = topDifferential(counts.perClassUni, counts.totalsUni, cls, slots).map(x => ({ ...x, n: 1 }));
+  const bi  = topDifferential(counts.perClassBi,  counts.totalsBi,  cls, slots).map(x => ({ ...x, n: 2 }));
+  const tri = topDifferential(counts.perClassTri, counts.totalsTri, cls, slots).map(x => ({ ...x, n: 3 }));
+  return [...uni, ...bi, ...tri].sort((a, b) => b.g2 - a.g2);
 }
 
 // Phrase explorer: rank phrases (uni / bi / tri) by RAW total frequency

@@ -94,18 +94,23 @@ function dedupBySupersetCoverage(rules) {
 
 export function generateKeywordRules(tickets, {
   stopwords,
-  minConfidence = 80,
-  minSubjectCoverage = 0.5,
-  minBodyCoverage = 0.3,
-  minTruePositivesUnigram = 15,
-  minTruePositivesBigram = 8,
-  // Backwards-compat: tests that pass `minTruePositives` get applied to both.
+  minConfidence = 70,
+  minSubjectCoverage = 0.3,
+  minBodyCoverage = 0.2,
+  minTruePositivesUnigram = 10,
+  minTruePositivesBigram = 6,
+  minTruePositivesTrigram = 4,
+  // Backwards-compat: tests that pass `minTruePositives` get applied to all.
   minTruePositives,
-  topN = 50,
+  topN = 60,
 } = {}) {
   const stats = keywordStats(tickets, { stopwords: stopwords ?? new Set(), topN });
   const rules = [];
-  const minTpFor = (entry) => minTruePositives ?? (entry.n === 2 ? minTruePositivesBigram : minTruePositivesUnigram);
+  const minTpFor = (entry) => minTruePositives ?? (
+    entry.n === 3 ? minTruePositivesTrigram :
+    entry.n === 2 ? minTruePositivesBigram :
+    minTruePositivesUnigram
+  );
   const passes = (r, minCov, entry) =>
     r.stats.confidence_percent >= minConfidence
     && r.stats.coverage_percent >= minCov

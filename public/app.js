@@ -249,9 +249,17 @@ function renderKeywords(a) {
 }
 
 // === Phase 12: Dashboard sections E (rules) + F (edge cases) ===
+function confidenceTier(pct) {
+  if (pct >= 90) return { tier: 'high', label: '🟢 deploy', hint: 'spoľahlivé na nasadenie' };
+  if (pct >= 80) return { tier: 'mid', label: '🟡 caution', hint: 'nasadiť s pozorovaním FP' };
+  return { tier: 'low', label: '🔴 review', hint: 'pred nasadením prejsť s TL' };
+}
+
 function ruleCardHtml(r) {
   const idCode = (ex) => ex.code ? `<code title="${escapeHtml(ex.ticket_id)}">${escapeHtml(ex.code)}</code>` : `<code>${escapeHtml(ex.ticket_id)}</code>`;
   const sourceBadge = r.source === 'manual' ? '<span class="source-badge manual">manual</span>' : '<span class="source-badge">auto</span>';
+  const tier = confidenceTier(r.stats.confidence_percent);
+  const tierBadge = `<span class="conf-tier conf-${tier.tier}" title="${tier.hint}">${tier.label}</span>`;
   // For manual rules: dropdown to change classification + delete button
   const manualControls = r.manual_id ? `
     <div class="manual-controls" style="float:right;display:flex;gap:6px;align-items:center;">
@@ -261,8 +269,8 @@ function ruleCardHtml(r) {
       <button class="rule-delete" data-id="${escapeHtml(r.manual_id)}" style="background:#fff;color:#af2600;border:1px solid #af2600;font-size:11px;padding:2px 8px;">odstrániť</button>
     </div>` : '';
   return `
-    <article class="rule">
-      <h4>${escapeHtml(r.id)} · <span class="badge ${r.action.classification}">${r.action.classification}</span> ${escapeHtml(r.human_readable)}${sourceBadge}${manualControls}</h4>
+    <article class="rule conf-${tier.tier}">
+      <h4>${escapeHtml(r.id)} · <span class="badge ${r.action.classification}">${r.action.classification}</span> ${escapeHtml(r.human_readable)} ${tierBadge}${sourceBadge}${manualControls}</h4>
       <div class="stats">
         <span><strong>coverage:</strong> ${r.stats.coverage_percent}%</span>
         <span><strong>confidence:</strong> ${r.stats.confidence_percent}%</span>

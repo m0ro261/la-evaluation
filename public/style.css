@@ -48,3 +48,10 @@ button.phr-add.primary { background: var(--accent); color: #fff; border-color: v
 .phr-actions details { display: inline-block; margin-left: 4px; }
 .rule .source-badge { font-size: 10px; padding: 1px 6px; background: var(--info); color: #fff; border-radius: 3px; margin-left: 6px; vertical-align: middle; }
 .rule .source-badge.manual { background: var(--accent); }
+.rule .conf-tier { font-size: 11px; padding: 2px 8px; border-radius: 3px; margin-left: 6px; vertical-align: middle; font-weight: 500; }
+.rule.conf-high { border-left: 4px solid var(--good); }
+.rule.conf-high .conf-tier { background: #e6f4e6; color: var(--good); }
+.rule.conf-mid { border-left: 4px solid #d4a017; }
+.rule.conf-mid .conf-tier { background: #fdf6e3; color: #8a6d00; }
+.rule.conf-low { border-left: 4px solid var(--warn); }
+.rule.conf-low .conf-tier { background: #fde8e8; color: var(--warn); }
