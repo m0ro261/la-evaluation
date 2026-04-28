@@ -119,6 +119,83 @@ test('POST /api/tag-categories persists categorization', async () => {
   server.close();
 });
 
+test('POST /api/manual-rules persists, GET lists them, DELETE removes', async () => {
+  const stub = createStorageInMemory();
+  const app = createApp({ storageFactory: () => stub });
+  const server = app.listen(0); const { port } = server.address();
+  // initial GET — empty
+  let res = await fetch(`http://127.0.0.1:${port}/api/manual-rules`);
+  assert.equal(res.status, 200);
+  assert.deepEqual((await res.json()).rules, []);
+  // POST one
+  res = await fetch(`http://127.0.0.1:${port}/api/manual-rules`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ field: 'subject', value: 'platobná brána', classification: 'TP' }),
+  });
+  assert.equal(res.status, 200);
+  const { id } = await res.json();
+  // GET — has it
+  res = await fetch(`http://127.0.0.1:${port}/api/manual-rules`);
+  const list = (await res.json()).rules;
+  assert.equal(list.length, 1);
+  assert.equal(list[0].value, 'platobná brána');
+  // DELETE
+  res = await fetch(`http://127.0.0.1:${port}/api/manual-rules/${id}`, { method: 'DELETE' });
+  assert.equal(res.status, 200);
+  res = await fetch(`http://127.0.0.1:${port}/api/manual-rules`);
+  assert.deepEqual((await res.json()).rules, []);
+  server.close();
+});
+
+test('POST /api/manual-rules rejects invalid input', async () => {
+  const stub = createStorageInMemory();
+  const app = createApp({ storageFactory: () => stub });
+  const server = app.listen(0); const { port } = server.address();
+  // bad field
+  let res = await fetch(`http://127.0.0.1:${port}/api/manual-rules`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ field: 'sender_email', value: 'x', classification: 'ZP' }),
+  });
+  assert.equal(res.status, 400);
+  // bad classification
+  res = await fetch(`http://127.0.0.1:${port}/api/manual-rules`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ field: 'subject', value: 'x', classification: 'WHATEVS' }),
+  });
+  assert.equal(res.status, 400);
+  // missing value
+  res = await fetch(`http://127.0.0.1:${port}/api/manual-rules`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ field: 'subject', classification: 'ZP' }),
+  });
+  assert.equal(res.status, 400);
+  server.close();
+});
+
+test('GET /api/analysis includes manual rules merged with auto rules', async () => {
+  const stub = createStorageInMemory();
+  await stub.saveCache({
+    tickets: [
+      { id: 'a', code: 'A-1', classification: 'TP', subject: 'platobná brána chyba', date_created: '2026-04-20 00:00:00', owner: { email: 'x@y.sk', domain: 'y.sk' }, first_customer_message: { plain_text: '' }, tag_ids: [] },
+      { id: 'b', code: 'A-2', classification: 'TP', subject: 'platobná brána test', date_created: '2026-04-20 00:00:00', owner: { email: 'x@y.sk', domain: 'y.sk' }, first_customer_message: { plain_text: '' }, tag_ids: [] },
+    ],
+    meta: { count: 2, tag_id_to_name: {} },
+  });
+  await stub.writeJson('manual-rules.json', {
+    version: 1, rules: [{ id: 'm_test', field: 'subject', value: 'platobná brána', classification: 'TP', added_at: '2026-04-28T00:00:00Z' }],
+  });
+  const app = createApp({ storageFactory: () => stub });
+  const server = app.listen(0); const { port } = server.address();
+  const res = await fetch(`http://127.0.0.1:${port}/api/analysis`);
+  const body = await res.json();
+  const manualRule = body.rules.find(r => r.source === 'manual');
+  assert.ok(manualRule, 'expected at least one manual rule in analysis output');
+  assert.equal(manualRule.condition.value, 'platobná brána');
+  assert.equal(manualRule.action.classification, 'TP');
+  assert.equal(manualRule.stats.matches_total, 2);
+  server.close();
+});
+
 function createStorageInMemory() {
   const m = { saved: null, files: {} };
   m.saveCache = async ({ tickets, meta }) => { m.saved = { tickets, meta }; return 'mem://x'; };

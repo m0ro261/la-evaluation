@@ -93,18 +93,27 @@ async function renderPhrases() {
     if (_phraseState.search && !p.phrase.includes(_phraseState.search.toLowerCase())) return false;
     return true;
   });
-  const head = `<thead><tr><th>fráza</th><th>n</th><th>spolu</th><th>ZP</th><th>TP</th><th>BUG</th><th>URGENT</th><th>bez kl.</th><th>dominant</th></tr></thead>`;
-  const body = filtered.map(p => `<tr>
-    <td><code>${escapeHtml(p.phrase)}</code></td>
-    <td>${p.n}</td>
-    <td><strong>${p.total}</strong></td>
-    <td>${p.by_class.ZP}</td>
-    <td>${p.by_class.TP}</td>
-    <td>${p.by_class.BUG}</td>
-    <td>${p.by_class.URGENT_BUG}</td>
-    <td>${p.unclassified}</td>
-    <td>${p.dominant ? `<span class="badge ${p.dominant}">${p.dominant}</span> ${p.dominant_pct}%` : '<span class="hint">—</span>'}</td>
-  </tr>`).join('');
+  const head = `<thead><tr><th>fráza</th><th>n</th><th>spolu</th><th>ZP</th><th>TP</th><th>BUG</th><th>URGENT</th><th>bez kl.</th><th>dominant</th><th>pridať ako pravidlo</th></tr></thead>`;
+  const body = filtered.map(p => {
+    const phr = escapeHtml(p.phrase);
+    const fld = p.n === 1 ? 'subject' : 'body';
+    const addBtns = ['ZP','TP','BUG','URGENT_BUG'].map(cls =>
+      `<button class="phr-add" data-phrase="${phr}" data-field="subject" data-cls="${cls}" title="ako subject contains '${phr}' → ${cls}">S→${cls}</button>
+       <button class="phr-add" data-phrase="${phr}" data-field="body" data-cls="${cls}" title="ako body contains '${phr}' → ${cls}">B→${cls}</button>`
+    ).join(' ');
+    return `<tr>
+      <td><code>${phr}</code></td>
+      <td>${p.n}</td>
+      <td><strong>${p.total}</strong></td>
+      <td>${p.by_class.ZP}</td>
+      <td>${p.by_class.TP}</td>
+      <td>${p.by_class.BUG}</td>
+      <td>${p.by_class.URGENT_BUG}</td>
+      <td>${p.unclassified}</td>
+      <td>${p.dominant ? `<span class="badge ${p.dominant}">${p.dominant}</span> ${p.dominant_pct}%` : '<span class="hint">—</span>'}</td>
+      <td class="phr-actions">${p.dominant ? `<button class="phr-add primary" data-phrase="${phr}" data-field="body" data-cls="${p.dominant}" title="quick add: body contains '${p.phrase}' → ${p.dominant}">+ ${p.dominant}</button>` : ''}<details><summary class="hint">viac…</summary><div class="phr-add-grid">${addBtns}</div></details></td>
+    </tr>`;
+  }).join('');
   el.innerHTML = `
     <h3>H · Frekventné frázy (Phrase Explorer)</h3>
     <p class="hint">Top fráz zoradené podľa raw frekvencie (uni / bi / trigramy). Zobrazené ${filtered.length} z ${phrases.length} (po filtri). Použi na prieskum patternov, ktoré algoritmus nezachytil.</p>
@@ -126,6 +135,27 @@ async function renderPhrases() {
   document.getElementById('phr-search').addEventListener('input', (e) => { _phraseState.search = e.target.value; renderPhrases(); });
   document.getElementById('phr-n').addEventListener('change', (e) => { _phraseState.filterN = e.target.value; renderPhrases(); });
   document.getElementById('phr-min').addEventListener('change', (e) => { _phraseState.minCount = Math.max(1, Number(e.target.value) || 5); renderPhrases(); });
+  el.querySelectorAll('button.phr-add').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const phrase = btn.dataset.phrase;
+      const field = btn.dataset.field;
+      const cls = btn.dataset.cls;
+      btn.disabled = true; btn.textContent = '…';
+      const r = await fetch('/api/manual-rules', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ field, value: phrase, classification: cls }),
+      });
+      const body = await r.json();
+      if (body.ok) {
+        btn.textContent = '✓';
+        // Re-load entire dashboard to surface the new rule + updated metrics
+        loadDashboard();
+      } else {
+        btn.disabled = false;
+        btn.textContent = `chyba: ${body.message}`;
+      }
+    });
+  });
 }
 
 function pct(n, total) { return total === 0 ? 0 : Math.round((n / total) * 1000) / 10; }
@@ -224,7 +254,7 @@ function renderRules(a) {
   if (!a.rules.length) { el.innerHTML = '<h3>F · Navrhované pravidlá</h3><p class="hint">Žiadne pravidlá nedosiahli prahy.</p>'; return; }
   const cards = a.rules.map(r => `
     <article class="rule">
-      <h4>${escapeHtml(r.id)} · <span class="badge ${r.action.classification}">${r.action.classification}</span> ${escapeHtml(r.human_readable)}</h4>
+      <h4>${escapeHtml(r.id)} · <span class="badge ${r.action.classification}">${r.action.classification}</span> ${escapeHtml(r.human_readable)}${r.source === 'manual' ? '<span class="source-badge manual">manual</span>' : '<span class="source-badge">auto</span>'}${r.manual_id ? `<button class="rule-delete" data-id="${escapeHtml(r.manual_id)}" style="float:right;background:#fff;color:#af2600;border:1px solid #af2600;font-size:11px;padding:2px 8px;">odstrániť</button>` : ''}</h4>
       <div class="stats">
         <span><strong>coverage:</strong> ${r.stats.coverage_percent}%</span>
         <span><strong>confidence:</strong> ${r.stats.confidence_percent}%</span>
@@ -236,6 +266,15 @@ function renderRules(a) {
       ${r.false_positive_examples?.length ? `<details><summary>False positives (${r.false_positive_examples.length})</summary><ul>${r.false_positive_examples.map(ex => `<li><code>${escapeHtml(ex.ticket_id)}</code> — ${escapeHtml(ex.subject)} <em>(${ex.actual_classification})</em></li>`).join('')}</ul></details>` : ''}
     </article>`).join('');
   el.innerHTML = `<h3>F · Navrhované pravidlá (${a.rules.length})</h3>${cards}`;
+  el.querySelectorAll('button.rule-delete').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Odstrániť toto manuálne pravidlo?')) return;
+      btn.disabled = true;
+      const r = await fetch(`/api/manual-rules/${encodeURIComponent(btn.dataset.id)}`, { method: 'DELETE' });
+      if (r.ok) loadDashboard();
+      else { btn.disabled = false; alert('Mazanie zlyhalo.'); }
+    });
+  });
 }
 
 function renderEdges(a) {

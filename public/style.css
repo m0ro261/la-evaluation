@@ -38,3 +38,13 @@ th { color: var(--muted); font-weight: 500; font-size: 13px; text-transform: upp
 .rule details { margin-top: 8px; }
 .rule details summary { cursor: pointer; color: var(--info); }
 .export-links a { color: var(--accent); }
+.badge.ZP { background: #811e00; color:#fff; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+.badge.TP { background: #c05500; color:#fff; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+.badge.BUG { background: #8e002d; color:#fff; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+.badge.URGENT_BUG { background: #00be90; color:#000; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+button.phr-add { padding: 3px 8px; font-size: 12px; margin: 1px; border-radius: 4px; }
+button.phr-add.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.phr-add-grid { display: grid; grid-template-columns: repeat(2, auto); gap: 4px; padding-top: 6px; }
+.phr-actions details { display: inline-block; margin-left: 4px; }
+.rule .source-badge { font-size: 10px; padding: 1px 6px; background: var(--info); color: #fff; border-radius: 3px; margin-left: 6px; vertical-align: middle; }
+.rule .source-badge.manual { background: var(--accent); }

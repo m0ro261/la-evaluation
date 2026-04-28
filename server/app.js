@@ -152,6 +152,37 @@ export function createApp({ clientFactory, storageFactory } = {}) {
     res.json({ ok: true, phrases, total_tickets: tickets.length });
   });
 
+  app.get('/api/manual-rules', async (_req, res) => {
+    const storage = makeStorage(dataDir);
+    const data = await storage.readJson('manual-rules.json');
+    res.json(data ?? { version: 1, rules: [] });
+  });
+
+  app.post('/api/manual-rules', async (req, res) => {
+    const { field, value, classification, label } = req.body ?? {};
+    if (!['subject', 'body'].includes(field)) return res.status(400).json({ ok: false, message: 'field musí byť subject alebo body' });
+    if (!value || typeof value !== 'string') return res.status(400).json({ ok: false, message: 'value je povinné' });
+    if (!['ZP', 'TP', 'BUG', 'URGENT_BUG'].includes(classification)) return res.status(400).json({ ok: false, message: 'neplatná classification' });
+    const storage = makeStorage(dataDir);
+    const existing = (await storage.readJson('manual-rules.json')) ?? { version: 1, rules: [] };
+    const id = `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    const dup = existing.rules.find(r => r.field === field && r.value === value && r.classification === classification);
+    if (dup) return res.status(409).json({ ok: false, message: 'pravidlo už existuje', id: dup.id });
+    existing.rules.push({ id, field, value: value.trim(), classification, label: label ?? '', added_at: new Date().toISOString() });
+    await storage.writeJson('manual-rules.json', existing);
+    res.json({ ok: true, id });
+  });
+
+  app.delete('/api/manual-rules/:id', async (req, res) => {
+    const storage = makeStorage(dataDir);
+    const existing = (await storage.readJson('manual-rules.json')) ?? { version: 1, rules: [] };
+    const before = existing.rules.length;
+    existing.rules = existing.rules.filter(r => r.id !== req.params.id);
+    if (existing.rules.length === before) return res.status(404).json({ ok: false, message: 'pravidlo neexistuje' });
+    await storage.writeJson('manual-rules.json', existing);
+    res.json({ ok: true });
+  });
+
   app.get('/api/analysis', async (_req, res) => {
     const storage = makeStorage(dataDir);
     const data = await storage.loadLatest();
@@ -161,7 +192,8 @@ export function createApp({ clientFactory, storageFactory } = {}) {
     const cats = (await storage.readJson('tag-categories.json'))?.categories ?? {};
     const ignoredTagIds = new Set(Object.entries(cats).filter(([, v]) => v === 'ignored').map(([k]) => k));
     const tickets = data.tickets.filter(t => !(t.tag_ids ?? []).some(id => ignoredTagIds.has(id)));
-    const { rules, edge_cases } = generateAllRules(tickets, { stopwords });
+    const manualPicks = ((await storage.readJson('manual-rules.json'))?.rules ?? []).map(r => ({ ...r }));
+    const { rules, edge_cases } = generateAllRules(tickets, { stopwords, manualPicks });
     res.json({
       distribution: distributionStats(tickets),
       weekly_trend: weeklyTrend(tickets),
@@ -183,7 +215,8 @@ export function createApp({ clientFactory, storageFactory } = {}) {
     const cats = (await storage.readJson('tag-categories.json'))?.categories ?? {};
     const ignoredTagIds = new Set(Object.entries(cats).filter(([, v]) => v === 'ignored').map(([k]) => k));
     const tickets = data.tickets.filter(t => !(t.tag_ids ?? []).some(id => ignoredTagIds.has(id)));
-    return { tickets, ...generateAllRules(tickets, { stopwords }) };
+    const manualPicks = ((await storage.readJson('manual-rules.json'))?.rules ?? []).map(r => ({ ...r }));
+    return { tickets, ...generateAllRules(tickets, { stopwords, manualPicks }) };
   }
 
   app.get('/api/export/rules.json', async (_req, res) => {
