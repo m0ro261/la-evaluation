@@ -94,28 +94,32 @@ function dedupBySupersetCoverage(rules) {
 
 export function generateKeywordRules(tickets, {
   stopwords,
-  minConfidence = 75,
+  minConfidence = 80,
   minSubjectCoverage = 0.5,
   minBodyCoverage = 0.3,
-  minTruePositives = 15,
+  minTruePositivesUnigram = 15,
+  minTruePositivesBigram = 8,
+  // Backwards-compat: tests that pass `minTruePositives` get applied to both.
+  minTruePositives,
   topN = 50,
 } = {}) {
   const stats = keywordStats(tickets, { stopwords: stopwords ?? new Set(), topN });
   const rules = [];
-  const passes = (r, minCov) =>
+  const minTpFor = (entry) => minTruePositives ?? (entry.n === 2 ? minTruePositivesBigram : minTruePositivesUnigram);
+  const passes = (r, minCov, entry) =>
     r.stats.confidence_percent >= minConfidence
     && r.stats.coverage_percent >= minCov
-    && r.stats.true_positives >= minTruePositives;
+    && r.stats.true_positives >= minTpFor(entry);
   for (const cls of CLASSES) {
-    for (const { word } of stats[cls].subject) {
-      const r = makeRule('keyword_subject', 'subject', word, cls);
+    for (const entry of stats[cls].subject) {
+      const r = makeRule('keyword_subject', 'subject', entry.word, cls);
       r.stats = scoreRule(r, tickets);
-      if (passes(r, minSubjectCoverage)) rules.push(r);
+      if (passes(r, minSubjectCoverage, entry)) rules.push(r);
     }
-    for (const { word } of stats[cls].body) {
-      const r = makeRule('keyword_body', 'body', word, cls);
+    for (const entry of stats[cls].body) {
+      const r = makeRule('keyword_body', 'body', entry.word, cls);
       r.stats = scoreRule(r, tickets);
-      if (passes(r, minBodyCoverage)) rules.push(r);
+      if (passes(r, minBodyCoverage, entry)) rules.push(r);
     }
   }
   return dedupBySupersetCoverage(rules).sort((a, b) => b.stats.coverage_percent - a.stats.coverage_percent || b.stats.confidence_percent - a.stats.confidence_percent);
