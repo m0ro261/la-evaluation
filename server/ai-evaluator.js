@@ -22,14 +22,18 @@ export async function evaluateTickets({
   concurrency = 5,
   signal,
   onProgress = () => {},
-  existingResults = new Map(), // ticket_id -> result, allows resume
+  onPartial = null, // ({results, usage}) — invoked every checkpointEvery to allow mid-run save
+  checkpointEvery = 50,
+  existingResults = new Map(),
 }) {
   const todo = tickets.filter(t => !existingResults.has(t.id));
-  let usage = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+  const usage = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+  const errorKinds = { no_json: 0, parse_error: 0, bad_class: 0, api: 0, other: 0 };
   let done = 0;
   let errors = 0;
+  const freshSparse = new Array(todo.length);
 
-  const fresh = await processInPool(todo, concurrency, async (ticket) => {
+  const fresh = await processInPool(todo, concurrency, async (ticket, idx) => {
     if (signal?.aborted) return null;
     let entry;
     try {
@@ -48,22 +52,33 @@ export async function evaluateTickets({
       };
     } catch (e) {
       errors += 1;
+      const kind = e.kind || (e.status ? 'api' : 'other');
+      errorKinds[kind] = (errorKinds[kind] ?? 0) + 1;
       entry = {
         ticket_id: ticket.id,
         code: ticket.code ?? '',
         subject: ticket.subject ?? '',
         actual: ticket.classification ?? null,
         error: e.message,
+        error_kind: kind,
+        error_raw: e.raw ? String(e.raw).slice(0, 500) : undefined,
         evaluated_at: new Date().toISOString(),
       };
     }
+    freshSparse[idx] = entry;
     done += 1;
-    onProgress({ done, total: todo.length, errors, usage });
+    onProgress({ done, total: todo.length, errors, error_kinds: { ...errorKinds }, usage });
+
+    // Periodic checkpoint — save partial results so a crash/cancel doesn't lose them
+    if (onPartial && done % checkpointEvery === 0) {
+      const partial = [...existingResults.values(), ...freshSparse.filter(Boolean)];
+      try { await onPartial({ results: partial, usage, errors, error_kinds: { ...errorKinds } }); } catch {}
+    }
     return entry;
   });
 
   const all = [...existingResults.values(), ...fresh.filter(Boolean)];
-  return { results: all, usage, errors, processed: done, skipped_existing: existingResults.size };
+  return { results: all, usage, errors, error_kinds: errorKinds, processed: done, skipped_existing: existingResults.size };
 }
 
 export function computeConfusionMatrix(results) {

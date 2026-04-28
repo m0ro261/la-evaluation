@@ -350,11 +350,22 @@ export function createApp({ clientFactory, storageFactory } = {}) {
         model,
       });
 
-      const { results, usage, errors, processed } = await evaluateTickets({
+      const { results, usage, errors, error_kinds, processed } = await evaluateTickets({
         client, tickets, model,
         signal: ac.signal,
         existingResults,
         onProgress: (ev) => send('progress', ev),
+        // Periodic save every 50 tickets — crash/cancel won't lose work
+        checkpointEvery: 50,
+        onPartial: async ({ results: partialResults, usage: partialUsage }) => {
+          await storage.writeJson('ai-classifications.json', {
+            results: partialResults,
+            usage: partialUsage,
+            model,
+            evaluated_at: new Date().toISOString(),
+            in_progress: true,
+          });
+        },
       });
 
       const confusion = computeConfusionMatrix(results);
@@ -365,6 +376,8 @@ export function createApp({ clientFactory, storageFactory } = {}) {
         cost,
         model,
         evaluated_at: new Date().toISOString(),
+        in_progress: false,
+        error_kinds,
       };
       await storage.writeJson('ai-classifications.json', payload);
 

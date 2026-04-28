@@ -63,6 +63,23 @@ export function createAiClient(apiKey) {
   return new Anthropic({ apiKey });
 }
 
+function extractJson(text) {
+  // 1) ```json ... ``` block
+  const fence = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/i);
+  if (fence) return fence[1];
+  // 2) Last balanced {...} block (model often writes reasoning before JSON)
+  let depth = 0, start = -1, lastValid = null;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '{') { if (depth === 0) start = i; depth++; }
+    else if (ch === '}') { depth--; if (depth === 0 && start >= 0) lastValid = text.slice(start, i + 1); }
+  }
+  if (lastValid) return lastValid;
+  // 3) First {...?...} non-greedy
+  const m = text.match(/\{[\s\S]*?\}/);
+  return m ? m[0] : null;
+}
+
 export async function classifyTicket(client, ticket, { model = 'claude-haiku-4-5', maxBodyChars = 3000 } = {}) {
   const subject = (ticket.subject || '').slice(0, 300);
   const body = (ticket.first_customer_message?.plain_text || '').slice(0, maxBodyChars);
@@ -70,7 +87,7 @@ export async function classifyTicket(client, ticket, { model = 'claude-haiku-4-5
 
   const response = await client.messages.create({
     model,
-    max_tokens: 200,
+    max_tokens: 600,
     system: [
       { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
     ],
@@ -83,16 +100,28 @@ export async function classifyTicket(client, ticket, { model = 'claude-haiku-4-5
     .join('')
     .trim();
 
-  // Extract JSON object — model occasionally wraps in code fences despite instructions
-  const match = text.match(/\{[\s\S]*?\}/);
-  if (!match) throw new Error(`No JSON object in AI response: ${text.slice(0, 200)}`);
+  const jsonStr = extractJson(text);
+  if (!jsonStr) {
+    const err = new Error(`No JSON in response | raw: ${text.slice(0, 250).replace(/\n/g, ' ')}`);
+    err.raw = text;
+    err.kind = 'no_json';
+    throw err;
+  }
 
   let parsed;
-  try { parsed = JSON.parse(match[0]); }
-  catch (e) { throw new Error(`Invalid JSON from AI: ${match[0].slice(0, 200)}`); }
+  try { parsed = JSON.parse(jsonStr); }
+  catch (e) {
+    const err = new Error(`Invalid JSON syntax | raw: ${jsonStr.slice(0, 250).replace(/\n/g, ' ')}`);
+    err.raw = text;
+    err.kind = 'parse_error';
+    throw err;
+  }
 
   if (!['ZP', 'TP', 'BUG', 'URGENT_BUG'].includes(parsed.classification)) {
-    throw new Error(`Invalid classification value: ${parsed.classification}`);
+    const err = new Error(`Invalid classification value: "${parsed.classification}" | raw: ${text.slice(0, 200).replace(/\n/g, ' ')}`);
+    err.raw = text;
+    err.kind = 'bad_class';
+    throw err;
   }
 
   return {

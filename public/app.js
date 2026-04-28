@@ -162,7 +162,10 @@ async function startAiEvaluation(opts = {}) {
         } else if (event === 'progress') {
           if (data.done % 10 === 0 || data.done === data.total) {
             const pct = Math.round((data.done / data.total) * 100);
-            logLine(`progress: ${data.done} / ${data.total} (${pct}%) — chyby: ${data.errors}, $$~${(data.usage.input_tokens / 1e6 + data.usage.output_tokens / 1e6 * 5).toFixed(3)}`);
+            const ek = data.error_kinds || {};
+            const errBreak = Object.entries(ek).filter(([, v]) => v > 0).map(([k, v]) => `${k}=${v}`).join(', ');
+            const cost = (data.usage.input_tokens / 1e6 + data.usage.output_tokens / 1e6 * 5).toFixed(3);
+            logLine(`progress: ${data.done} / ${data.total} (${pct}%) — chyby: ${data.errors}${errBreak ? ' (' + errBreak + ')' : ''}, $$~${cost}`);
           }
         } else if (event === 'done') {
           logLine(`HOTOVO — accuracy: ${(data.confusion.accuracy * 100).toFixed(1)}%, agreed: ${data.confusion.agreed}/${data.confusion.total}, errors: ${data.errors}, cost: $${data.cost.total_usd.toFixed(3)}`);
