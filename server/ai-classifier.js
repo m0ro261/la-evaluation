@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { stripSignature, stripSubjectPrefix } from './text-utils.js';
 
 // Stable system prompt — content is identical across all classifications
 // so prompt caching can deduplicate the system tokens (cache_control below).
@@ -81,9 +82,14 @@ function extractJson(text) {
 }
 
 export async function classifyTicket(client, ticket, { model = 'claude-haiku-4-5', maxBodyChars = 3000 } = {}) {
-  const subject = (ticket.subject || '').slice(0, 300);
-  const body = (ticket.first_customer_message?.plain_text || '').slice(0, maxBodyChars);
-  const userPrompt = `Subject: ${subject}\n\nBody:\n${body || '(prázdne)'}`;
+  // Same cleanup pipeline as rule generation:
+  //  - strip Re:/Fwd:/Odp: prefixes from subject (model doesn't need to see them)
+  //  - strip signature, quoted reply blocks, URLs, ticket codes, emails, dates from body
+  // Saves input tokens AND prevents the model from anchoring on quoted agent text.
+  const subject = stripSubjectPrefix(ticket.subject || '').slice(0, 300);
+  const rawBody = ticket.first_customer_message?.plain_text || '';
+  const body = stripSignature(rawBody).slice(0, maxBodyChars);
+  const userPrompt = `Subject: ${subject || '(prázdny subject)'}\n\nBody:\n${body || '(prázdne body)'}`;
 
   const response = await client.messages.create({
     model,
