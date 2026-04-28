@@ -84,12 +84,22 @@ function pct(n, total) { return total === 0 ? 0 : Math.round((n / total) * 1000)
 function renderOverview(a) {
   const el = document.getElementById('overview');
   const d = a.distribution;
+  const ec = a.edge_cases;
+  const auto = ec.automation_potential_pct ?? 0;
+  const cov = ec.coverage_of_classified_pct ?? 0;
   el.innerHTML = `
     <h3>Prehľad</h3>
     <p><strong>${d.total}</strong> ticketov; <strong>${d.unclassified}</strong> bez klasifikácie (${pct(d.unclassified, d.total)}%).</p>
     <ul>
       ${['ZP','TP','BUG','URGENT_BUG'].map(c => `<li><span class="badge ${c}">${c}</span> ${d.by_class[c]} (${pct(d.by_class[c], d.total)}%)</li>`).join('')}
-    </ul>`;
+    </ul>
+    <h4 style="margin-top: 16px;">Automatizačný potenciál</h4>
+    <p>Z <strong>${ec.classified_total ?? 0}</strong> klasifikovaných ticketov:</p>
+    <ul>
+      <li>aspoň 1 pravidlo by zasiahlo: <strong>${ec.classified_covered ?? 0}</strong> (${cov}%)</li>
+      <li>... a klasifikácia by súhlasila: <strong>${ec.classified_agreed ?? 0}</strong> (<strong>${auto}%</strong>)</li>
+    </ul>
+    <p class="hint">Automatizačný potenciál ${auto}% znamená že ${auto}% manuálnej TL klasifikácie by sa dalo nahradiť pravidlami pri zachovaní zhody s históriou.</p>`;
 }
 
 function renderTrend(a) {

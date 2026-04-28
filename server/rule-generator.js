@@ -92,7 +92,7 @@ function dedupBySupersetCoverage(rules) {
   return rules.filter((_, i) => keep[i]);
 }
 
-export function generateKeywordRules(tickets, { stopwords, minConfidence = 70, minSubjectCoverage = 1, minBodyCoverage = 0.5, topN = 30 } = {}) {
+export function generateKeywordRules(tickets, { stopwords, minConfidence = 65, minSubjectCoverage = 0.5, minBodyCoverage = 0.3, topN = 50 } = {}) {
   const stats = keywordStats(tickets, { stopwords: stopwords ?? new Set(), topN });
   const rules = [];
   for (const cls of CLASSES) {
@@ -172,7 +172,12 @@ export function generateEmailRules(tickets, { minTickets = 5, minConfidence = 90
 export function edgeCases(tickets, rules, { sampleSize = 10 } = {}) {
   const uncovered = [];
   const disagreements = [];
+  let classifiedTotal = 0;
+  let classifiedCovered = 0;
+  let classifiedAgreed = 0;
   for (const t of tickets) {
+    const isClassified = !!t.classification;
+    if (isClassified) classifiedTotal += 1;
     let matchedRule = null;
     for (const r of rules) if (ruleMatches(r, t)) { matchedRule = r; break; }
     if (!matchedRule) {
@@ -180,10 +185,25 @@ export function edgeCases(tickets, rules, { sampleSize = 10 } = {}) {
     } else if (t.classification && t.classification !== matchedRule.action.classification) {
       disagreements.push({ ticket: t, rule: matchedRule });
     }
+    if (isClassified && matchedRule) {
+      classifiedCovered += 1;
+      if (t.classification === matchedRule.action.classification) classifiedAgreed += 1;
+    }
   }
   // sample
   const sample = (arr) => arr.slice(0, sampleSize);
-  return { uncovered: sample(uncovered), disagreements: sample(disagreements), uncovered_total: uncovered.length, disagreements_total: disagreements.length };
+  const pct = (n, total) => total === 0 ? 0 : Math.round((n / total) * 1000) / 10;
+  return {
+    uncovered: sample(uncovered),
+    disagreements: sample(disagreements),
+    uncovered_total: uncovered.length,
+    disagreements_total: disagreements.length,
+    classified_total: classifiedTotal,
+    classified_covered: classifiedCovered,
+    classified_agreed: classifiedAgreed,
+    coverage_of_classified_pct: pct(classifiedCovered, classifiedTotal),
+    automation_potential_pct: pct(classifiedAgreed, classifiedTotal),
+  };
 }
 
 export function generateAllRules(tickets, { stopwords = new Set() } = {}) {
