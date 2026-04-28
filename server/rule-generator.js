@@ -35,7 +35,7 @@ function ruleMatches(rule, ticket) {
 }
 
 export function scoreRule(rule, tickets) {
-  let matches_total = 0, true_positives = 0;
+  let matches_total = 0, true_positives = 0, false_positives = 0, unclassified_matches = 0;
   const matched_examples = [];
   const false_positive_examples = [];
   for (const t of tickets) {
@@ -43,15 +43,20 @@ export function scoreRule(rule, tickets) {
     matches_total++;
     if (t.classification === rule.action.classification) {
       true_positives++;
-      if (matched_examples.length < 5) matched_examples.push({ ticket_id: t.id, subject: t.subject, actual_classification: t.classification });
+      if (matched_examples.length < 5) matched_examples.push({ ticket_id: t.id, code: t.code ?? '', subject: t.subject, actual_classification: t.classification });
     } else if (t.classification) {
-      if (false_positive_examples.length < 5) false_positive_examples.push({ ticket_id: t.id, subject: t.subject, actual_classification: t.classification });
+      false_positives++;
+      if (false_positive_examples.length < 5) false_positive_examples.push({ ticket_id: t.id, code: t.code ?? '', subject: t.subject, actual_classification: t.classification });
+    } else {
+      unclassified_matches++;
     }
   }
-  const false_positives = matches_total - true_positives;
-  const confidence_percent = matches_total === 0 ? 0 : Math.round((true_positives / matches_total) * 10000) / 100;
+  // Confidence is computed over LABELED matches only (TP + FP).
+  // Unclassified matches don't have ground truth and would unfairly drag confidence down.
+  const labeled_matches = true_positives + false_positives;
+  const confidence_percent = labeled_matches === 0 ? 0 : Math.round((true_positives / labeled_matches) * 10000) / 100;
   const coverage_percent = tickets.length === 0 ? 0 : Math.round((matches_total / tickets.length) * 10000) / 100;
-  return { matches_total, true_positives, false_positives, confidence_percent, coverage_percent, examples: matched_examples, false_positive_examples };
+  return { matches_total, true_positives, false_positives, unclassified_matches, confidence_percent, coverage_percent, examples: matched_examples, false_positive_examples };
 }
 
 let _rid = 0;

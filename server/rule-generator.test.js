@@ -27,6 +27,31 @@ test('scoreRule returns matches, confidence, coverage on subject contains', () =
   assert.equal(s.coverage_percent, 30);
 });
 
+test('scoreRule confidence ignores unclassified matches (uses LABELED only)', () => {
+  // 2 BUG matches, 0 classified disagreements, 5 unclassified matches.
+  // OLD wrong behavior: confidence = 2/7 = 28.6%
+  // NEW correct behavior: confidence = 2/2 = 100% (unclassified don't have ground truth)
+  const tickets = [
+    { id: 'b1', classification: 'BUG', subject: 'nefunguje admin' },
+    { id: 'b2', classification: 'BUG', subject: 'nefunguje export' },
+    { id: 'u1', classification: null,  subject: 'nefunguje neviem' },
+    { id: 'u2', classification: null,  subject: 'nefunguje produkt' },
+    { id: 'u3', classification: null,  subject: 'nefunguje koncovka' },
+    { id: 'u4', classification: null,  subject: 'nefunguje api' },
+    { id: 'u5', classification: null,  subject: 'nefunguje import' },
+    { id: 'z1', classification: 'ZP',  subject: 'ako nastavit' },
+  ];
+  const rule = { condition: { field: 'subject', operator: 'contains', value: 'nefunguje' }, action: { classification: 'BUG' } };
+  const s = scoreRule(rule, tickets);
+  assert.equal(s.matches_total, 7);
+  assert.equal(s.true_positives, 2);
+  assert.equal(s.false_positives, 0);
+  assert.equal(s.unclassified_matches, 5);
+  assert.equal(s.confidence_percent, 100);
+  // coverage still uses total (= matches / all tickets)
+  assert.ok(Math.abs(s.coverage_percent - 87.5) < 0.5);
+});
+
 test('generateKeywordRules emits rules above thresholds, sorted by coverage', () => {
   const stopwords = new Set();
   const rules = generateKeywordRules(TICKETS, { stopwords, minConfidence: 60, minSubjectCoverage: 10 });

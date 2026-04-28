@@ -182,13 +182,14 @@ function renderRules(a) {
 function renderEdges(a) {
   const el = document.getElementById('edges');
   const ec = a.edge_cases;
+  const idLabel = (t) => t.code ? `<code title="${escapeHtml(t.id)}">${escapeHtml(t.code)}</code>` : `<code>${escapeHtml(t.id)}</code>`;
   el.innerHTML = `
     <h3>Edge cases</h3>
     <p class="hint">Tickety, ktoré nepokrylo žiadne high-confidence pravidlo, alebo kde pravidlo nesúhlasí so skutočnou klasifikáciou.</p>
     <h4>Bez pravidla (vzorka ${ec.uncovered.length} z ${ec.uncovered_total})</h4>
-    <ul>${ec.uncovered.map(t => `<li><code>${escapeHtml(t.id)}</code> — ${escapeHtml(t.subject || '(bez subjectu)')} <em>(skut.: ${t.classification ?? 'bez kl.'})</em></li>`).join('')}</ul>
+    <ul>${ec.uncovered.map(t => `<li>${idLabel(t)} — ${escapeHtml(t.subject || '(bez subjectu)')} <em>(skut.: ${t.classification ?? 'bez kl.'})</em></li>`).join('')}</ul>
     <h4>Rozpor (vzorka ${ec.disagreements.length} z ${ec.disagreements_total})</h4>
-    <ul>${ec.disagreements.map(d => `<li><code>${escapeHtml(d.ticket.id)}</code> — ${escapeHtml(d.ticket.subject || '')} — pravidlo: <code>${escapeHtml(d.rule.id)}</code> hovorí <strong>${d.rule.action.classification}</strong>, skutočne: <strong>${d.ticket.classification}</strong></li>`).join('')}</ul>`;
+    <ul>${ec.disagreements.map(d => `<li>${idLabel(d.ticket)} — ${escapeHtml(d.ticket.subject || '')} — pravidlo: <code>${escapeHtml(d.rule.id)}</code> hovorí <strong>${d.rule.action.classification}</strong>, skutočne: <strong>${d.ticket.classification}</strong></li>`).join('')}</ul>`;
 }
 
 // Setup form (Task 8.2)
