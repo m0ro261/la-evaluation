@@ -92,19 +92,30 @@ function dedupBySupersetCoverage(rules) {
   return rules.filter((_, i) => keep[i]);
 }
 
-export function generateKeywordRules(tickets, { stopwords, minConfidence = 65, minSubjectCoverage = 0.5, minBodyCoverage = 0.3, topN = 50 } = {}) {
+export function generateKeywordRules(tickets, {
+  stopwords,
+  minConfidence = 75,
+  minSubjectCoverage = 0.5,
+  minBodyCoverage = 0.3,
+  minTruePositives = 15,
+  topN = 50,
+} = {}) {
   const stats = keywordStats(tickets, { stopwords: stopwords ?? new Set(), topN });
   const rules = [];
+  const passes = (r, minCov) =>
+    r.stats.confidence_percent >= minConfidence
+    && r.stats.coverage_percent >= minCov
+    && r.stats.true_positives >= minTruePositives;
   for (const cls of CLASSES) {
     for (const { word } of stats[cls].subject) {
       const r = makeRule('keyword_subject', 'subject', word, cls);
       r.stats = scoreRule(r, tickets);
-      if (r.stats.confidence_percent >= minConfidence && r.stats.coverage_percent >= minSubjectCoverage) rules.push(r);
+      if (passes(r, minSubjectCoverage)) rules.push(r);
     }
     for (const { word } of stats[cls].body) {
       const r = makeRule('keyword_body', 'body', word, cls);
       r.stats = scoreRule(r, tickets);
-      if (r.stats.confidence_percent >= minConfidence && r.stats.coverage_percent >= minBodyCoverage) rules.push(r);
+      if (passes(r, minBodyCoverage)) rules.push(r);
     }
   }
   return dedupBySupersetCoverage(rules).sort((a, b) => b.stats.coverage_percent - a.stats.coverage_percent || b.stats.confidence_percent - a.stats.confidence_percent);

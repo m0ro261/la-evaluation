@@ -149,11 +149,18 @@ function topDifferential(perClass, totalsPerClass, cls, topN) {
 }
 
 function topMixed(counts, cls, topN) {
-  // Compute G² separately for unigrams and bigrams (different denominators),
-  // tag each entry with `n` (1 or 2), then merge by G² descending.
-  const uni = topDifferential(counts.perClassUni, counts.totalsUni, cls, topN).map(x => ({ ...x, n: 1 }));
-  const bi  = topDifferential(counts.perClassBi,  counts.totalsBi,  cls, topN).map(x => ({ ...x, n: 2 }));
-  return [...uni, ...bi].sort((a, b) => b.g2 - a.g2).slice(0, topN);
+  // Compute G² separately for unigrams and bigrams. Bigrams have inherently
+  // smaller counts (and thus lower G² values), so a pure G² merge is biased
+  // towards unigrams. To give phrasal patterns a fair shot, reserve roughly
+  // half of the topN slots for bigrams.
+  const uniSlots = Math.ceil(topN / 2);
+  const biSlots = Math.floor(topN / 2);
+  const uni = topDifferential(counts.perClassUni, counts.totalsUni, cls, uniSlots).map(x => ({ ...x, n: 1 }));
+  const bi  = topDifferential(counts.perClassBi,  counts.totalsBi,  cls, biSlots).map(x => ({ ...x, n: 2 }));
+  // Within each list ranking is by G²; the merged output preserves that and
+  // interleaves so callers iterating sequentially still see the strongest
+  // items first.
+  return [...uni, ...bi].sort((a, b) => b.g2 - a.g2);
 }
 
 export function keywordStats(tickets, { stopwords, topN = 30 } = {}) {

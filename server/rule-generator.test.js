@@ -54,7 +54,7 @@ test('scoreRule confidence ignores unclassified matches (uses LABELED only)', ()
 
 test('generateKeywordRules emits rules above thresholds, sorted by coverage', () => {
   const stopwords = new Set();
-  const rules = generateKeywordRules(TICKETS, { stopwords, minConfidence: 60, minSubjectCoverage: 10 });
+  const rules = generateKeywordRules(TICKETS, { stopwords, minConfidence: 60, minSubjectCoverage: 10, minTruePositives: 1 });
   // expect a rule about 'ako' for ZP (matches t5, t6)
   const ako = rules.find(r => r.condition.value === 'ako' && r.action.classification === 'ZP');
   assert.ok(ako, 'expected ZP rule for "ako"');
