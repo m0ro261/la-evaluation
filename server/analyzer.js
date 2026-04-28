@@ -75,7 +75,7 @@ export function topDomains(tickets, n = 20) {
   }));
 }
 
-import { stripSubjectPrefix, tokenize } from './text-utils.js';
+import { stripSubjectPrefix, tokenize, stripSignature } from './text-utils.js';
 
 // G² (Dunning's log-likelihood) for 2x2 contingency table
 // a = word in class, b = words in class total, c = word in rest, d = words in rest total
@@ -130,7 +130,7 @@ function topDifferential(perClass, totalsPerClass, cls, topN) {
 export function keywordStats(tickets, { stopwords, topN = 30 } = {}) {
   const sw = stopwords ?? new Set();
   const subjectCounts = buildCounts(tickets, t => stripSubjectPrefix(t.subject || ''), sw);
-  const bodyCounts = buildCounts(tickets, t => t.first_customer_message?.plain_text || '', sw);
+  const bodyCounts = buildCounts(tickets, t => stripSignature(t.first_customer_message?.plain_text || ''), sw);
   const out = {};
   for (const cls of CLASSES_FOR_KW) {
     out[cls] = {

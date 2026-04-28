@@ -29,6 +29,32 @@ export function stripSubjectPrefix(subject) {
   return s;
 }
 
+// Patterns that mark the start of a typical email signature/closing block.
+// Once we find any of these, we cut off the text — the rest is signature
+// and would otherwise pollute keyword extraction with brand/contact words.
+const SIGNATURE_DELIMITERS = [
+  /^\s*--\s*$/m,
+  /\bS\s+priate(?:ľ|l)sk(?:ým|ymi)?\s+pozdravom\b/i,
+  /\bS\s+pozdravom\b/i,
+  /\b(?:Best|Kind|Warm|Sincere)\s+regards\b/i,
+  /\bMany\s+thanks\b/i,
+  /\bĎakujem\s*(?:za\s+(?:info|odpove(?:ď|d)|pomoc))?\s*[,.!]?\s*$/im,
+  /\bV(?:ď|d)aka\s*[,.!]?\s*$/im,
+  /\bPekn(?:ý|y)\s+de(?:ň|n)\b/i,
+  /^[ \t]*(?:Mgr|Ing|JUDr|MUDr|RNDr|PhDr|Bc)\.\s+[A-ZČĎĹĽŇÔŔŠŤÚÝŽ]/m,
+];
+
+export function stripSignature(text) {
+  if (!text) return '';
+  const s = String(text);
+  let cut = s.length;
+  for (const re of SIGNATURE_DELIMITERS) {
+    const m = re.exec(s);
+    if (m && m.index < cut) cut = m.index;
+  }
+  return s.slice(0, cut).trim();
+}
+
 export function tokenize(text) {
   if (!text) return [];
   return String(text)

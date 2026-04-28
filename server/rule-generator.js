@@ -1,4 +1,4 @@
-import { stripSubjectPrefix, tokenize } from './text-utils.js';
+import { stripSubjectPrefix, tokenize, stripSignature } from './text-utils.js';
 import { keywordStats } from './analyzer.js';
 
 const CLASSES = ['ZP', 'TP', 'BUG', 'URGENT_BUG'];
@@ -12,7 +12,7 @@ const TAG_FOR_CLASS = {
 
 function fieldText(ticket, field) {
   if (field === 'subject') return stripSubjectPrefix(ticket.subject || '').toLowerCase();
-  if (field === 'body') return (ticket.first_customer_message?.plain_text || '').toLowerCase();
+  if (field === 'body') return stripSignature(ticket.first_customer_message?.plain_text || '').toLowerCase();
   if (field === 'sender_email') return (ticket.owner?.email || '').toLowerCase();
   if (field === 'sender_domain') return (ticket.owner?.domain || '').toLowerCase();
   return '';

@@ -21,8 +21,28 @@ test('stripHtml strips style and script blocks', () => {
   assert.equal(stripHtml('a<style>.x{}</style>b<script>alert(1)</script>c'), 'a b c');
 });
 
-import { stripSubjectPrefix, tokenize, loadStopwords } from './text-utils.js';
+import { stripSubjectPrefix, tokenize, loadStopwords, stripSignature } from './text-utils.js';
 import path from 'node:path';
+
+test('stripSignature cuts at S priateľským pozdravom', () => {
+  const body = 'Dobrý deň, mám otázku ohľadom produktu.\n\nS priateľským pozdravom\nIng. Ján Novák\nXY s.r.o.';
+  assert.equal(stripSignature(body), 'Dobrý deň, mám otázku ohľadom produktu.');
+});
+
+test('stripSignature cuts at Best regards', () => {
+  const body = 'Hello, please help.\n\nBest regards\nJohn';
+  assert.equal(stripSignature(body), 'Hello, please help.');
+});
+
+test('stripSignature cuts at standalone "--" email separator', () => {
+  const body = 'Question text here.\n--\nJohn Doe\njohn@example.com';
+  assert.equal(stripSignature(body), 'Question text here.');
+});
+
+test('stripSignature returns input unchanged when no signature found', () => {
+  const body = 'Just a question, no signature.';
+  assert.equal(stripSignature(body), 'Just a question, no signature.');
+});
 
 test('stripSubjectPrefix removes Re:/Fwd:/Fw:/Odp: chains', () => {
   assert.equal(stripSubjectPrefix('Re: Re: Fwd: Hello'), 'Hello');
