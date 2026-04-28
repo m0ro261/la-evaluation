@@ -92,10 +92,28 @@ async function loadDashboard() {
 
 const AI_CLASSES = ['ZP', 'TP', 'BUG', 'URGENT_BUG'];
 
+// Cached for review browser — fetched once when AI Validation panel renders
+let _aiState = { results: [], tickets: [], reviews: {}, baseUrl: '' };
+let _reviewFilter = { tl: 'all', ai: 'all', minConf: 0, mode: 'disagreements' };
+let _reviewLimit = 50;
+
 async function renderAiValidation() {
   const el = document.getElementById('ai-validation');
   el.innerHTML = `<h3>I · AI · Validácia</h3><p class="hint">Načítavam predošlé výsledky…</p>`;
-  const res = await fetch('/api/ai-results').then(r => r.json()).catch(() => null);
+
+  const [aiRes, ticketsRes, reviewsRes, cfgRes] = await Promise.all([
+    fetch('/api/ai-results').then(r => r.json()).catch(() => null),
+    fetch('/api/tickets').then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch('/api/disagreement-reviews').then(r => r.json()).catch(() => null),
+    fetch('/api/config').then(r => r.json()).catch(() => null),
+  ]);
+
+  _aiState.results = aiRes?.results ?? [];
+  _aiState.tickets = ticketsRes?.tickets ?? [];
+  _aiState.reviews = reviewsRes?.reviews ?? {};
+  _aiState.baseUrl = (cfgRes?.baseUrl ?? '').replace(/\/api\/v3\/?$/, '');
+
+  const res = aiRes;
   const has = res?.results?.length > 0;
   const cm = has ? res.confusion : null;
   const cost = has ? res.cost : null;
@@ -113,6 +131,8 @@ async function renderAiValidation() {
     <pre id="ai-log" class="log" style="max-height: 200px;">${has ? `Predošlý beh: ${res.results.length} ticketov, accuracy ${accPct}%, ${cost ? '$' + cost.total_usd.toFixed(3) : ''}` : ''}</pre>
     <div id="ai-results-area">${has ? renderConfusionAndStats(cm, cost, usage, res.results) : ''}</div>
   `;
+
+  if (has) renderReviewBrowser();
 
   document.getElementById('ai-run').addEventListener('click', startAiEvaluation);
   document.getElementById('ai-rerun').addEventListener('click', async () => {
@@ -170,6 +190,9 @@ async function startAiEvaluation(opts = {}) {
         } else if (event === 'done') {
           logLine(`HOTOVO — accuracy: ${(data.confusion.accuracy * 100).toFixed(1)}%, agreed: ${data.confusion.agreed}/${data.confusion.total}, errors: ${data.errors}, cost: $${data.cost.total_usd.toFixed(3)}`);
           document.getElementById('ai-results-area').innerHTML = renderConfusionAndStats(data.confusion, data.cost, data.usage, data.results);
+          // Refresh state with new results, then re-render browser
+          _aiState.results = data.results;
+          renderReviewBrowser();
         } else if (event === 'error') {
           logLine(`ERROR: ${data.message}`);
         }
@@ -230,24 +253,160 @@ function renderConfusionAndStats(cm, cost, usage, results) {
     <h4 style="margin-top: 16px;">Argumentácia pre meeting</h4>
     <p class="hint">Z ${cm.total} historicky klasifikovaných ticketov AI dosiahla zhodu <strong>${accPct}%</strong> s tvojou manuálnou klasifikáciou. Rule-based prístup pokrýval len ~5% — AI je teda <strong>~${Math.round(cm.accuracy / 0.05)}× efektívnejšia</strong> pri tej istej veľkosti datasetu.</p>
 
-    ${disagreements.length ? `
-    <details style="margin-top: 12px;">
-      <summary>Sample rozpor (AI ≠ TL) — ${disagreements.length} prípadov</summary>
-      <ul style="font-size: 13px;">${disagreements.map(d => `
-        <li><code>${escapeHtml(d.code || d.ticket_id)}</code> — ${escapeHtml(d.subject || '')}<br>
-            <span class="hint">TL: <strong>${d.actual}</strong>, AI: <strong>${d.ai.classification}</strong> (conf ${d.ai.confidence}%) — <em>${escapeHtml(d.ai.reasoning)}</em></span></li>
-      `).join('')}</ul>
-    </details>` : ''}
-
-    ${lowConf.length ? `
-    <details style="margin-top: 8px;">
-      <summary>Low-confidence (AI si nie je istá) — vzorka ${lowConf.length}</summary>
-      <ul style="font-size: 13px;">${lowConf.map(d => `
-        <li><code>${escapeHtml(d.code || d.ticket_id)}</code> — ${escapeHtml(d.subject || '')} — AI: <strong>${d.ai.classification}</strong> (${d.ai.confidence}%)</li>
-      `).join('')}</ul>
-    </details>` : ''}
-  `;
+    <div id="ai-review-browser" style="margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px;"></div>`;
 }
+
+function renderReviewBrowser() {
+  const el = document.getElementById('ai-review-browser');
+  if (!el) return;
+
+  const ticketById = new Map(_aiState.tickets.map(t => [t.id, t]));
+  const all = _aiState.results.filter(r => !r.error && r.ai && r.actual);
+  const total = all.length;
+
+  const filtered = all.filter(r => {
+    if (_reviewFilter.tl !== 'all' && r.actual !== _reviewFilter.tl) return false;
+    if (_reviewFilter.ai !== 'all' && r.ai.classification !== _reviewFilter.ai) return false;
+    if ((r.ai.confidence ?? 0) < _reviewFilter.minConf) return false;
+    if (_reviewFilter.mode === 'disagreements' && r.actual === r.ai.classification) return false;
+    if (_reviewFilter.mode === 'agreements' && r.actual !== r.ai.classification) return false;
+    return true;
+  });
+
+  // Vote summary
+  const votes = { tl_right: 0, ai_right: 0, ambiguous: 0 };
+  for (const v of Object.values(_aiState.reviews)) if (votes[v.verdict] !== undefined) votes[v.verdict] += 1;
+  const totalVoted = votes.tl_right + votes.ai_right + votes.ambiguous;
+
+  const opt = (sel, val, label) => `<option value="${val}"${sel === val ? ' selected' : ''}>${label}</option>`;
+  const classOpts = (sel) => ['all', 'ZP', 'TP', 'BUG', 'URGENT_BUG'].map(c => opt(sel, c, c)).join('');
+
+  const slice = filtered.slice(0, _reviewLimit);
+
+  const rows = slice.map(r => {
+    const t = ticketById.get(r.ticket_id);
+    const code = r.code || r.ticket_id;
+    const bodySnippet = (t?.first_customer_message?.plain_text || '').slice(0, 350);
+    const myVerdict = _aiState.reviews[r.ticket_id]?.verdict ?? null;
+    const laUrl = _aiState.baseUrl ? `${_aiState.baseUrl}/agent/tickets/${encodeURIComponent(r.ticket_id)}` : null;
+    const cls = (c) => `<span class="badge ${c}">${c}</span>`;
+    const voteBtn = (verdict, label, color) => `
+      <button class="vote-btn ${myVerdict === verdict ? 'active' : ''}" data-id="${escapeHtml(r.ticket_id)}" data-verdict="${verdict}"
+        style="padding:2px 8px;font-size:11px;border:1px solid ${color};background:${myVerdict === verdict ? color : '#fff'};color:${myVerdict === verdict ? '#fff' : color};border-radius:3px;cursor:pointer;">
+        ${label}
+      </button>`;
+    return `<tr>
+      <td style="vertical-align:top;width:160px;">
+        <div><code>${escapeHtml(code)}</code></div>
+        ${laUrl ? `<a href="${laUrl}" target="_blank" rel="noopener" style="font-size:11px;">otvoriť v LA →</a>` : ''}
+      </td>
+      <td style="vertical-align:top;">
+        <div><strong>${escapeHtml(t?.subject || r.subject || '')}</strong></div>
+        ${bodySnippet ? `<div class="hint" style="font-size:12px;margin-top:4px;max-height:60px;overflow:hidden;">${escapeHtml(bodySnippet)}…</div>` : ''}
+      </td>
+      <td style="vertical-align:top;width:80px;">${cls(r.actual)}</td>
+      <td style="vertical-align:top;width:120px;">
+        ${cls(r.ai.classification)}
+        <div class="hint" style="font-size:11px;">${r.ai.confidence}%</div>
+      </td>
+      <td style="vertical-align:top;font-size:12px;font-style:italic;">${escapeHtml(r.ai.reasoning || '')}</td>
+      <td style="vertical-align:top;width:160px;">
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          ${voteBtn('tl_right', 'TL ✓', '#287b3a')}
+          ${voteBtn('ai_right', 'AI ✓', '#1b4f8c')}
+          ${voteBtn('ambiguous', 'sporné', '#666')}
+          ${myVerdict ? `<button class="vote-btn vote-clear" data-id="${escapeHtml(r.ticket_id)}" style="padding:2px 8px;font-size:10px;color:var(--muted);background:#fff;border:1px solid var(--line);border-radius:3px;cursor:pointer;">vymazať</button>` : ''}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <h4>Review browser — porovnaj a hodnoť rozpory</h4>
+    <p class="hint">Filtruj rozpory, prečítaj si subject + body výňatok, pozri si AI reasoning, klikni na "TL/AI ✓" alebo "sporné" — agregát ti povie či AI naozaj robí horšie alebo či TL bol nekonzistentný.</p>
+
+    <div class="row" style="gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <label style="font-size:12px;">TL bol:
+        <select id="rv-tl">${classOpts(_reviewFilter.tl)}</select>
+      </label>
+      <label style="font-size:12px;">AI klasifikuje:
+        <select id="rv-ai">${classOpts(_reviewFilter.ai)}</select>
+      </label>
+      <label style="font-size:12px;">Min confidence:
+        <select id="rv-conf">
+          ${[0, 50, 70, 80, 90, 95].map(v => opt(_reviewFilter.minConf, v, v + '%')).join('')}
+        </select>
+      </label>
+      <label style="font-size:12px;">Zobraziť:
+        <select id="rv-mode">
+          ${opt(_reviewFilter.mode, 'disagreements', 'iba rozpory')}
+          ${opt(_reviewFilter.mode, 'agreements', 'iba zhody')}
+          ${opt(_reviewFilter.mode, 'all', 'všetko')}
+        </select>
+      </label>
+      <span style="margin-left:auto;align-self:center;font-size:12px;color:var(--muted);">
+        ${filtered.length} z ${total} (zobr. prvých ${slice.length})
+      </span>
+    </div>
+
+    ${totalVoted > 0 ? `
+    <div style="background:var(--bg);padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:13px;">
+      <strong>Tvoje hodnotenie (${totalVoted} ticketov):</strong>
+      &nbsp; AI ✓ <strong>${votes.ai_right}</strong> (${pct(votes.ai_right, totalVoted)}%)
+      &nbsp; TL ✓ <strong>${votes.tl_right}</strong> (${pct(votes.tl_right, totalVoted)}%)
+      &nbsp; sporné <strong>${votes.ambiguous}</strong> (${pct(votes.ambiguous, totalVoted)}%)
+      ${votes.ai_right > votes.tl_right * 1.5 ? '<br><em style="color:var(--good);">→ AI má pravdu častejšie ako TL — silný argument že AI by automatizovala správnejšie.</em>' :
+        votes.tl_right > votes.ai_right * 1.5 ? '<br><em style="color:var(--warn);">→ TL má pravdu častejšie — system prompt potrebuje doladiť firemnú konvenciu.</em>' :
+        '<br><em>→ Pomer vyrovnaný — niektoré tickety sú genuinely ambiguózne, AI je solídna alternatíva.</em>'}
+    </div>` : ''}
+
+    <div style="overflow-x:auto;">
+      <table style="font-size:13px;width:100%;">
+        <thead><tr>
+          <th style="width:160px;">ticket</th>
+          <th>subject + body výňatok</th>
+          <th style="width:80px;">TL</th>
+          <th style="width:120px;">AI</th>
+          <th>AI reasoning</th>
+          <th style="width:160px;">tvoj verdikt</th>
+        </tr></thead>
+        <tbody>${rows || '<tr><td colspan="6" class="hint" style="padding:24px;text-align:center;">Žiadne tickety pri tomto filtri.</td></tr>'}</tbody>
+      </table>
+    </div>
+    ${filtered.length > _reviewLimit ? `<div style="margin-top:12px;text-align:center;"><button id="rv-more" type="button">Zobraziť ďalších 50</button></div>` : ''}
+  `;
+
+  document.getElementById('rv-tl').addEventListener('change', (e) => { _reviewFilter.tl = e.target.value; _reviewLimit = 50; renderReviewBrowser(); });
+  document.getElementById('rv-ai').addEventListener('change', (e) => { _reviewFilter.ai = e.target.value; _reviewLimit = 50; renderReviewBrowser(); });
+  document.getElementById('rv-conf').addEventListener('change', (e) => { _reviewFilter.minConf = Number(e.target.value); _reviewLimit = 50; renderReviewBrowser(); });
+  document.getElementById('rv-mode').addEventListener('change', (e) => { _reviewFilter.mode = e.target.value; _reviewLimit = 50; renderReviewBrowser(); });
+  document.getElementById('rv-more')?.addEventListener('click', () => { _reviewLimit += 50; renderReviewBrowser(); });
+
+  el.querySelectorAll('button.vote-btn:not(.vote-clear)').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const verdict = btn.dataset.verdict;
+      _aiState.reviews[id] = { verdict, updated_at: new Date().toISOString() };
+      await fetch(`/api/disagreement-reviews/${encodeURIComponent(id)}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ verdict }),
+      }).catch(() => {});
+      renderReviewBrowser();
+    });
+  });
+  el.querySelectorAll('button.vote-clear').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      delete _aiState.reviews[id];
+      await fetch(`/api/disagreement-reviews/${encodeURIComponent(id)}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ verdict: null }),
+      }).catch(() => {});
+      renderReviewBrowser();
+    });
+  });
+}
+
 
 let _phraseState = { search: '', filterN: 'all', minCount: 5 };
 

@@ -292,6 +292,31 @@ export function createApp({ clientFactory, storageFactory } = {}) {
     res.json({ ok: true });
   });
 
+  // ─── Disagreement reviews ────────────────────────────────────────
+  app.get('/api/disagreement-reviews', async (_req, res) => {
+    const storage = makeStorage(dataDir);
+    const data = await storage.readJson('disagreement-reviews.json');
+    res.json(data ?? { version: 1, reviews: {} });
+  });
+
+  app.post('/api/disagreement-reviews/:ticketId', async (req, res) => {
+    const { ticketId } = req.params;
+    const { verdict, note } = req.body ?? {};
+    if (!['tl_right', 'ai_right', 'ambiguous', null].includes(verdict)) {
+      return res.status(400).json({ ok: false, message: 'verdict musí byť tl_right | ai_right | ambiguous | null' });
+    }
+    const storage = makeStorage(dataDir);
+    const existing = (await storage.readJson('disagreement-reviews.json')) ?? { version: 1, reviews: {} };
+    if (verdict === null) {
+      delete existing.reviews[ticketId];
+    } else {
+      existing.reviews[ticketId] = { verdict, note: note ?? '', updated_at: new Date().toISOString() };
+    }
+    existing.updated_at = new Date().toISOString();
+    await storage.writeJson('disagreement-reviews.json', existing);
+    res.json({ ok: true });
+  });
+
   app.post('/api/ai-results-reset', async (_req, res) => {
     const storage = makeStorage(dataDir);
     await storage.writeJson('ai-classifications.json', { results: [], usage: { input_tokens: 0, output_tokens: 0 }, reset_at: new Date().toISOString() });
