@@ -88,7 +88,7 @@ function renderOverview(a) {
   const auto = ec.automation_potential_pct ?? 0;
   const cov = ec.coverage_of_classified_pct ?? 0;
   el.innerHTML = `
-    <h3>Prehľad</h3>
+    <h3>A · Prehľad</h3>
     <p><strong>${d.total}</strong> ticketov; <strong>${d.unclassified}</strong> bez klasifikácie (${pct(d.unclassified, d.total)}%).</p>
     <ul>
       ${['ZP','TP','BUG','URGENT_BUG'].map(c => `<li><span class="badge ${c}">${c}</span> ${d.by_class[c]} (${pct(d.by_class[c], d.total)}%)</li>`).join('')}
@@ -113,7 +113,7 @@ function renderTrend(a) {
         label: c, data: a.weekly_trend.map(w => w.by_class[c]), borderColor: CLASS_COLORS[c], tension: 0.3, fill: false,
       })),
     },
-    options: { plugins: { title: { display: true, text: 'Tickety / týždeň' } } },
+    options: { plugins: { title: { display: true, text: 'B · Tickety / týždeň' } } },
   });
 }
 
@@ -127,17 +127,17 @@ function renderDistribution(a) {
       datasets: [{ data: ['ZP','TP','BUG','URGENT_BUG'].map(c => d.by_class[c]).concat([d.unclassified]),
         backgroundColor: ['#811e00','#c05500','#8e002d','#00be90','#cccccc'] }],
     },
-    options: { plugins: { title: { display: true, text: 'Distribúcia klasifikácie' } } },
+    options: { plugins: { title: { display: true, text: 'B · Distribúcia klasifikácie' } } },
   });
 }
 
 function renderCustomers(a) {
   const el = document.getElementById('customers');
-  el.innerHTML = `<h3>Top klienti (email)</h3>` + ladderTable(a.top_customers, c => c.email);
+  el.innerHTML = `<h3>C · Top klienti (email)</h3>` + ladderTable(a.top_customers, c => c.email);
 }
 function renderDomains(a) {
   const el = document.getElementById('domains');
-  el.innerHTML = `<h3>Top domény</h3>` + ladderTable(a.top_domains, c => c.domain);
+  el.innerHTML = `<h3>D · Top domény</h3>` + ladderTable(a.top_domains, c => c.domain);
 }
 
 function ladderTable(rows, labelFn) {
@@ -160,7 +160,7 @@ function renderKeywords(a) {
   const renderList = (arr) => arr.length === 0
     ? '<p class="hint">—</p>'
     : `<ol>${arr.slice(0, 15).map(w => `<li><code>${escapeHtml(w.word)}</code> <span class="hint">G²=${w.g2.toFixed(1)}, in-class=${w.count_in_class}, rest=${w.count_in_rest}</span></li>`).join('')}</ol>`;
-  el.innerHTML = `<h3>Top diferenciálne slová (G² log-likelihood)</h3>` +
+  el.innerHTML = `<h3>E · Top diferenciálne slová (G² log-likelihood)</h3>` +
     `<div class="grid">${classes.map(c => `
       <div>
         <h4><span class="badge ${c}">${c}</span></h4>
@@ -172,7 +172,7 @@ function renderKeywords(a) {
 // === Phase 12: Dashboard sections E (rules) + F (edge cases) ===
 function renderRules(a) {
   const el = document.getElementById('rules');
-  if (!a.rules.length) { el.innerHTML = '<h3>Navrhované pravidlá</h3><p class="hint">Žiadne pravidlá nedosiahli prahy.</p>'; return; }
+  if (!a.rules.length) { el.innerHTML = '<h3>F · Navrhované pravidlá</h3><p class="hint">Žiadne pravidlá nedosiahli prahy.</p>'; return; }
   const cards = a.rules.map(r => `
     <article class="rule">
       <h4>${escapeHtml(r.id)} · <span class="badge ${r.action.classification}">${r.action.classification}</span> ${escapeHtml(r.human_readable)}</h4>
@@ -186,7 +186,7 @@ function renderRules(a) {
       ${r.examples?.length ? `<details><summary>Príklady (${r.examples.length})</summary><ul>${r.examples.map(ex => `<li><code>${escapeHtml(ex.ticket_id)}</code> — ${escapeHtml(ex.subject)}</li>`).join('')}</ul></details>` : ''}
       ${r.false_positive_examples?.length ? `<details><summary>False positives (${r.false_positive_examples.length})</summary><ul>${r.false_positive_examples.map(ex => `<li><code>${escapeHtml(ex.ticket_id)}</code> — ${escapeHtml(ex.subject)} <em>(${ex.actual_classification})</em></li>`).join('')}</ul></details>` : ''}
     </article>`).join('');
-  el.innerHTML = `<h3>Navrhované pravidlá (${a.rules.length})</h3>${cards}`;
+  el.innerHTML = `<h3>F · Navrhované pravidlá (${a.rules.length})</h3>${cards}`;
 }
 
 function renderEdges(a) {
@@ -194,7 +194,7 @@ function renderEdges(a) {
   const ec = a.edge_cases;
   const idLabel = (t) => t.code ? `<code title="${escapeHtml(t.id)}">${escapeHtml(t.code)}</code>` : `<code>${escapeHtml(t.id)}</code>`;
   el.innerHTML = `
-    <h3>Edge cases</h3>
+    <h3>G · Edge cases</h3>
     <p class="hint">Tickety, ktoré nepokrylo žiadne high-confidence pravidlo, alebo kde pravidlo nesúhlasí so skutočnou klasifikáciou.</p>
     <h4>Bez pravidla (vzorka ${ec.uncovered.length} z ${ec.uncovered_total})</h4>
     <ul>${ec.uncovered.map(t => `<li>${idLabel(t)} — ${escapeHtml(t.subject || '(bez subjectu)')} <em>(skut.: ${t.classification ?? 'bez kl.'})</em></li>`).join('')}</ul>
