@@ -1,7 +1,12 @@
 import { firstCustomerMessage } from './la-client.js';
 import { enrichTicket } from './enricher.js';
 
-const SKIPPED_STATUSES_DEFAULT = new Set(['X']); // X = archived/deleted in LA
+// LA status codes (per /docs/api/v3/):
+//   I=init, N=new, T=chatting, P=calling, R=resolved, X=deleted, B=spam,
+//   A=answered, C=open, W=postponed, L=closed
+// Defaults skip X (deleted) and B (spam) — these are not real customer
+// support tickets and otherwise drown the analysis.
+const SKIPPED_STATUSES_DEFAULT = new Set(['X', 'B']);
 
 function shouldSkip(ticket, { skippedStatuses, skipDeleted }) {
   if (skipDeleted && ticket.date_deleted && ticket.date_deleted.trim() !== '') return 'deleted';
