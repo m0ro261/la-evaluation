@@ -209,10 +209,12 @@ export function edgeCases(tickets, rules, { sampleSize = 10 } = {}) {
 export function generateAllRules(tickets, { stopwords = new Set() } = {}) {
   // reset id counter for deterministic ids per analysis
   _rid = 0;
+  // Only subject + body keyword rules — sender-based rules (domain, email)
+  // are excluded by design: LA Rules engine cannot pivot on sender attributes
+  // in a way that meaningfully automates classification, and the user
+  // explicitly does not want them as proposed automations.
   const kw = generateKeywordRules(tickets, { stopwords });
-  const dom = generateDomainRules(tickets);
-  const em = generateEmailRules(tickets);
-  const merged = [...kw, ...dom, ...em].sort((a, b) => b.stats.coverage_percent - a.stats.coverage_percent || b.stats.confidence_percent - a.stats.confidence_percent);
+  const merged = [...kw].sort((a, b) => b.stats.coverage_percent - a.stats.coverage_percent || b.stats.confidence_percent - a.stats.confidence_percent);
   // re-id stably after sort
   merged.forEach((r, i) => { r.id = `rule_${String(i + 1).padStart(3, '0')}`; });
   const ec = edgeCases(tickets, merged);
