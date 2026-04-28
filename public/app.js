@@ -13,6 +13,15 @@ async function bootstrap() {
   if (cfg?.baseUrl) document.querySelector('[name=baseUrl]').value = cfg.baseUrl;
   if (cfg?.periodDays) document.querySelector('[name=periodDays]').value = cfg.periodDays;
   show(cfg?.hasKey ? 'download' : 'setup');
+  // Build indicator in topbar — lets the user see at a glance whether the
+  // server is running the latest code or a stale process.
+  fetch('/api/version').then(r => r.json()).then(v => {
+    const span = document.createElement('span');
+    span.className = 'build-info';
+    span.title = `started ${v.started_at}`;
+    span.textContent = `build ${v.sha}`;
+    document.querySelector('.topbar').appendChild(span);
+  }).catch(() => {});
 }
 
 // === Phase 10: Tag categorization ===
