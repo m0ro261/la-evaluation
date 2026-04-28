@@ -173,6 +173,26 @@ export function createApp({ clientFactory, storageFactory } = {}) {
     res.json({ ok: true, id });
   });
 
+  app.patch('/api/manual-rules/:id', async (req, res) => {
+    const { classification, value, label } = req.body ?? {};
+    const storage = makeStorage(dataDir);
+    const existing = (await storage.readJson('manual-rules.json')) ?? { version: 1, rules: [] };
+    const r = existing.rules.find(x => x.id === req.params.id);
+    if (!r) return res.status(404).json({ ok: false, message: 'pravidlo neexistuje' });
+    if (classification !== undefined) {
+      if (!['ZP', 'TP', 'BUG', 'URGENT_BUG'].includes(classification)) return res.status(400).json({ ok: false, message: 'neplatná classification' });
+      r.classification = classification;
+    }
+    if (value !== undefined) {
+      if (typeof value !== 'string' || !value.trim()) return res.status(400).json({ ok: false, message: 'value je povinné' });
+      r.value = value.trim();
+    }
+    if (label !== undefined) r.label = String(label);
+    r.updated_at = new Date().toISOString();
+    await storage.writeJson('manual-rules.json', existing);
+    res.json({ ok: true, rule: r });
+  });
+
   app.delete('/api/manual-rules/:id', async (req, res) => {
     const storage = makeStorage(dataDir);
     const existing = (await storage.readJson('manual-rules.json')) ?? { version: 1, rules: [] };

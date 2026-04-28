@@ -172,6 +172,34 @@ test('POST /api/manual-rules rejects invalid input', async () => {
   server.close();
 });
 
+test('PATCH /api/manual-rules updates classification', async () => {
+  const stub = createStorageInMemory();
+  const app = createApp({ storageFactory: () => stub });
+  const server = app.listen(0); const { port } = server.address();
+  // create
+  let res = await fetch(`http://127.0.0.1:${port}/api/manual-rules`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ field: 'subject', value: 'platba', classification: 'TP' }),
+  });
+  const { id } = await res.json();
+  // patch classification
+  res = await fetch(`http://127.0.0.1:${port}/api/manual-rules/${id}`, {
+    method: 'PATCH', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ classification: 'BUG' }),
+  });
+  assert.equal(res.status, 200);
+  const { rule } = await res.json();
+  assert.equal(rule.classification, 'BUG');
+  assert.ok(rule.updated_at);
+  // patch invalid
+  res = await fetch(`http://127.0.0.1:${port}/api/manual-rules/${id}`, {
+    method: 'PATCH', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ classification: 'NOPE' }),
+  });
+  assert.equal(res.status, 400);
+  server.close();
+});
+
 test('GET /api/analysis includes manual rules merged with auto rules', async () => {
   const stub = createStorageInMemory();
   await stub.saveCache({

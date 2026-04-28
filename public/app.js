@@ -249,23 +249,51 @@ function renderKeywords(a) {
 }
 
 // === Phase 12: Dashboard sections E (rules) + F (edge cases) ===
-function renderRules(a) {
-  const el = document.getElementById('rules');
-  if (!a.rules.length) { el.innerHTML = '<h3>F · Navrhované pravidlá</h3><p class="hint">Žiadne pravidlá nedosiahli prahy.</p>'; return; }
-  const cards = a.rules.map(r => `
+function ruleCardHtml(r) {
+  const idCode = (ex) => ex.code ? `<code title="${escapeHtml(ex.ticket_id)}">${escapeHtml(ex.code)}</code>` : `<code>${escapeHtml(ex.ticket_id)}</code>`;
+  const sourceBadge = r.source === 'manual' ? '<span class="source-badge manual">manual</span>' : '<span class="source-badge">auto</span>';
+  // For manual rules: dropdown to change classification + delete button
+  const manualControls = r.manual_id ? `
+    <div class="manual-controls" style="float:right;display:flex;gap:6px;align-items:center;">
+      <select class="rule-class-edit" data-id="${escapeHtml(r.manual_id)}" data-current="${r.action.classification}" title="zmeniť klasifikáciu">
+        ${['ZP','TP','BUG','URGENT_BUG'].map(c => `<option value="${c}"${c === r.action.classification ? ' selected' : ''}>${c}</option>`).join('')}
+      </select>
+      <button class="rule-delete" data-id="${escapeHtml(r.manual_id)}" style="background:#fff;color:#af2600;border:1px solid #af2600;font-size:11px;padding:2px 8px;">odstrániť</button>
+    </div>` : '';
+  return `
     <article class="rule">
-      <h4>${escapeHtml(r.id)} · <span class="badge ${r.action.classification}">${r.action.classification}</span> ${escapeHtml(r.human_readable)}${r.source === 'manual' ? '<span class="source-badge manual">manual</span>' : '<span class="source-badge">auto</span>'}${r.manual_id ? `<button class="rule-delete" data-id="${escapeHtml(r.manual_id)}" style="float:right;background:#fff;color:#af2600;border:1px solid #af2600;font-size:11px;padding:2px 8px;">odstrániť</button>` : ''}</h4>
+      <h4>${escapeHtml(r.id)} · <span class="badge ${r.action.classification}">${r.action.classification}</span> ${escapeHtml(r.human_readable)}${sourceBadge}${manualControls}</h4>
       <div class="stats">
         <span><strong>coverage:</strong> ${r.stats.coverage_percent}%</span>
         <span><strong>confidence:</strong> ${r.stats.confidence_percent}%</span>
         <span>matches: ${r.stats.matches_total}</span>
         <span>TP: ${r.stats.true_positives}</span>
         <span>FP: ${r.stats.false_positives}</span>
+        ${r.stats.unclassified_matches != null ? `<span>bez kl.: ${r.stats.unclassified_matches}</span>` : ''}
       </div>
-      ${r.examples?.length ? `<details><summary>Príklady (${r.examples.length})</summary><ul>${r.examples.map(ex => `<li><code>${escapeHtml(ex.ticket_id)}</code> — ${escapeHtml(ex.subject)}</li>`).join('')}</ul></details>` : ''}
-      ${r.false_positive_examples?.length ? `<details><summary>False positives (${r.false_positive_examples.length})</summary><ul>${r.false_positive_examples.map(ex => `<li><code>${escapeHtml(ex.ticket_id)}</code> — ${escapeHtml(ex.subject)} <em>(${ex.actual_classification})</em></li>`).join('')}</ul></details>` : ''}
-    </article>`).join('');
-  el.innerHTML = `<h3>F · Navrhované pravidlá (${a.rules.length})</h3>${cards}`;
+      ${r.examples?.length ? `<details><summary>Príklady (${r.examples.length})</summary><ul>${r.examples.map(ex => `<li>${idCode(ex)} — ${escapeHtml(ex.subject)}</li>`).join('')}</ul></details>` : ''}
+      ${r.false_positive_examples?.length ? `<details><summary>False positives (${r.false_positive_examples.length})</summary><ul>${r.false_positive_examples.map(ex => `<li>${idCode(ex)} — ${escapeHtml(ex.subject)} <em>(${ex.actual_classification})</em></li>`).join('')}</ul></details>` : ''}
+    </article>`;
+}
+
+function renderRules(a) {
+  const el = document.getElementById('rules');
+  const manual = a.rules.filter(r => r.source === 'manual');
+  const auto = a.rules.filter(r => r.source !== 'manual');
+  if (!a.rules.length) {
+    el.innerHTML = '<h3>F · Navrhované pravidlá</h3><p class="hint">Žiadne pravidlá. Pozri sekciu H · Frekventné frázy a pridaj manuálne pravidlá kliknutím na "+".</p>';
+    return;
+  }
+  let html = `<h3>F · Navrhované pravidlá (${a.rules.length})</h3>`;
+  if (manual.length) {
+    html += `<h4 style="margin: 16px 0 8px; color: var(--accent);">Vaše manuálne pravidlá (${manual.length})</h4>`;
+    html += manual.map(ruleCardHtml).join('');
+  }
+  if (auto.length) {
+    html += `<h4 style="margin: 16px 0 8px;">Auto-generované (${auto.length})</h4>`;
+    html += auto.map(ruleCardHtml).join('');
+  }
+  el.innerHTML = html;
   el.querySelectorAll('button.rule-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Odstrániť toto manuálne pravidlo?')) return;
@@ -273,6 +301,19 @@ function renderRules(a) {
       const r = await fetch(`/api/manual-rules/${encodeURIComponent(btn.dataset.id)}`, { method: 'DELETE' });
       if (r.ok) loadDashboard();
       else { btn.disabled = false; alert('Mazanie zlyhalo.'); }
+    });
+  });
+  el.querySelectorAll('select.rule-class-edit').forEach(sel => {
+    sel.addEventListener('change', async () => {
+      const newCls = sel.value;
+      const id = sel.dataset.id;
+      sel.disabled = true;
+      const r = await fetch(`/api/manual-rules/${encodeURIComponent(id)}`, {
+        method: 'PATCH', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ classification: newCls }),
+      });
+      if (r.ok) loadDashboard();
+      else { sel.disabled = false; sel.value = sel.dataset.current; alert('Zmena zlyhala.'); }
     });
   });
 }
