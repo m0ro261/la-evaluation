@@ -85,8 +85,165 @@ async function loadDashboard() {
   renderDomains(a);
   renderKeywords(a);
   renderRules(a);
+  renderAiValidation();
   renderPhrases(a);
   renderEdges(a);
+}
+
+const AI_CLASSES = ['ZP', 'TP', 'BUG', 'URGENT_BUG'];
+
+async function renderAiValidation() {
+  const el = document.getElementById('ai-validation');
+  el.innerHTML = `<h3>I · AI · Validácia</h3><p class="hint">Načítavam predošlé výsledky…</p>`;
+  const res = await fetch('/api/ai-results').then(r => r.json()).catch(() => null);
+  const has = res?.results?.length > 0;
+  const cm = has ? res.confusion : null;
+  const cost = has ? res.cost : null;
+  const usage = has ? res.usage : null;
+  const accPct = cm ? Math.round(cm.accuracy * 1000) / 10 : null;
+
+  el.innerHTML = `
+    <h3>I · AI · Validácia <span class="hint" style="font-size: 12px; font-weight: normal;">(${res?.model ?? 'claude-haiku-4-5'})</span></h3>
+    <p class="hint">Klasifikuj všetky tickety pomocou AI a porovnaj s manuálnou klasifikáciou TL — získaš konkrétne číslo akú časť práce by AI auto-zaklasifikovala správne.</p>
+    <div class="row" style="margin-bottom: 12px;">
+      <button id="ai-run" class="primary">${has ? 'Pokračovať / dorobiť chýbajúce' : 'Spustiť AI evaluáciu'}</button>
+      <button id="ai-cancel" disabled>Zrušiť</button>
+      <button id="ai-rerun" type="button" style="background:#fff;color:var(--warn);border:1px solid var(--warn);">Vyčistiť výsledky a začať odznova</button>
+    </div>
+    <pre id="ai-log" class="log" style="max-height: 200px;">${has ? `Predošlý beh: ${res.results.length} ticketov, accuracy ${accPct}%, ${cost ? '$' + cost.total_usd.toFixed(3) : ''}` : ''}</pre>
+    <div id="ai-results-area">${has ? renderConfusionAndStats(cm, cost, usage, res.results) : ''}</div>
+  `;
+
+  document.getElementById('ai-run').addEventListener('click', startAiEvaluation);
+  document.getElementById('ai-rerun').addEventListener('click', async () => {
+    if (!confirm('Toto zmaže všetky existujúce AI výsledky a spustí beh nanovo. Pokračovať?')) return;
+    await fetch('/api/ai-results-reset', { method: 'POST' }).catch(() => {});
+    // Trigger fresh run by setting resume:false
+    startAiEvaluation({ resume: false });
+  });
+}
+
+let _aiAbort = null;
+
+async function startAiEvaluation(opts = {}) {
+  const log = document.getElementById('ai-log');
+  const runBtn = document.getElementById('ai-run');
+  const cancelBtn = document.getElementById('ai-cancel');
+  log.textContent = '';
+  runBtn.disabled = true; cancelBtn.disabled = false;
+  _aiAbort = new AbortController();
+
+  function logLine(msg) { log.textContent += msg + '\n'; log.scrollTop = log.scrollHeight; }
+
+  try {
+    const res = await fetch('/api/ai-evaluate', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ resume: opts.resume !== false }),
+      signal: _aiAbort.signal,
+    });
+    if (!res.ok && res.headers.get('content-type')?.includes('json')) {
+      const err = await res.json(); logLine(`Chyba: ${err.message}`); return;
+    }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += dec.decode(value, { stream: true });
+      const chunks = buffer.split('\n\n');
+      buffer = chunks.pop();
+      for (const chunk of chunks) {
+        const lines = chunk.split('\n');
+        const event = lines.find(l => l.startsWith('event: '))?.slice(7) ?? 'message';
+        const data = JSON.parse(lines.find(l => l.startsWith('data: '))?.slice(6) || '{}');
+        if (event === 'start') {
+          logLine(`Štart — model: ${data.model}, total: ${data.total}, už hotových: ${data.already_evaluated}, k spracovaniu: ${data.to_process}`);
+        } else if (event === 'progress') {
+          if (data.done % 10 === 0 || data.done === data.total) {
+            const pct = Math.round((data.done / data.total) * 100);
+            logLine(`progress: ${data.done} / ${data.total} (${pct}%) — chyby: ${data.errors}, $$~${(data.usage.input_tokens / 1e6 + data.usage.output_tokens / 1e6 * 5).toFixed(3)}`);
+          }
+        } else if (event === 'done') {
+          logLine(`HOTOVO — accuracy: ${(data.confusion.accuracy * 100).toFixed(1)}%, agreed: ${data.confusion.agreed}/${data.confusion.total}, errors: ${data.errors}, cost: $${data.cost.total_usd.toFixed(3)}`);
+          document.getElementById('ai-results-area').innerHTML = renderConfusionAndStats(data.confusion, data.cost, data.usage, data.results);
+        } else if (event === 'error') {
+          logLine(`ERROR: ${data.message}`);
+        }
+      }
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') logLine(`Chyba: ${e.message}`);
+  } finally {
+    runBtn.disabled = false; cancelBtn.disabled = true; _aiAbort = null;
+  }
+}
+
+document.addEventListener('click', (e) => {
+  if (e.target?.id === 'ai-cancel' && _aiAbort) { _aiAbort.abort(); }
+});
+
+function renderConfusionAndStats(cm, cost, usage, results) {
+  if (!cm || cm.total === 0) return '<p class="hint">Žiadne výsledky.</p>';
+  const accPct = (cm.accuracy * 100).toFixed(1);
+  const headerCells = ['<th>actual ↓ / predicted →</th>', ...AI_CLASSES.map(c => `<th><span class="badge ${c}">${c}</span></th>`), '<th>recall</th>'].join('');
+  const rows = AI_CLASSES.map(actual => {
+    const cells = AI_CLASSES.map(predicted => {
+      const n = cm.matrix[actual][predicted];
+      const isDiag = actual === predicted;
+      const bg = isDiag && n > 0 ? 'background:#e6f4e6;font-weight:600;' : (n > 0 ? 'background:#fde8e8;' : '');
+      return `<td style="text-align:center;${bg}">${n}</td>`;
+    }).join('');
+    const r = cm.per_class[actual];
+    return `<tr><th><span class="badge ${actual}">${actual}</span></th>${cells}<td>${(r.recall * 100).toFixed(1)}%</td></tr>`;
+  }).join('');
+  const precRow = `<tr><th>precision</th>${AI_CLASSES.map(c => `<td style="text-align:center;">${(cm.per_class[c].precision * 100).toFixed(1)}%</td>`).join('')}<td>F1 priemer: ${(AI_CLASSES.reduce((s, c) => s + cm.per_class[c].f1, 0) / 4 * 100).toFixed(1)}%</td></tr>`;
+
+  // Sample disagreements
+  const disagreements = results.filter(r => !r.error && r.actual && r.ai && r.actual !== r.ai.classification).slice(0, 8);
+  const lowConf = results.filter(r => !r.error && r.ai && r.ai.confidence < 70).slice(0, 5);
+
+  return `
+    <div style="display:flex; gap:24px; align-items: flex-start; flex-wrap: wrap;">
+      <div>
+        <h4 style="margin: 0 0 8px;">Confusion matrix (${cm.total} klasifikovaných)</h4>
+        <table style="font-size:13px;">
+          <thead><tr>${headerCells}</tr></thead>
+          <tbody>${rows}${precRow}</tbody>
+        </table>
+      </div>
+      <div style="min-width:240px;">
+        <h4 style="margin: 0 0 8px;">Súhrn</h4>
+        <ul style="margin: 0; padding-left: 18px;">
+          <li><strong>Accuracy:</strong> ${accPct}% (${cm.agreed}/${cm.total})</li>
+          <li>Low-confidence (&lt; 70%): ${cm.low_confidence_count}</li>
+          ${cost ? `<li><strong>Total cost:</strong> ~$${cost.total_usd.toFixed(3)}</li>` : ''}
+          ${usage ? `<li>tokens in: ${usage.input_tokens.toLocaleString()}, out: ${usage.output_tokens.toLocaleString()}</li>` : ''}
+          ${usage?.cache_read_input_tokens ? `<li>cache read: ${usage.cache_read_input_tokens.toLocaleString()} (~${((usage.cache_read_input_tokens || 0) / (usage.input_tokens || 1) * 100).toFixed(1)}%)</li>` : ''}
+        </ul>
+      </div>
+    </div>
+
+    <h4 style="margin-top: 16px;">Argumentácia pre meeting</h4>
+    <p class="hint">Z ${cm.total} historicky klasifikovaných ticketov AI dosiahla zhodu <strong>${accPct}%</strong> s tvojou manuálnou klasifikáciou. Rule-based prístup pokrýval len ~5% — AI je teda <strong>~${Math.round(cm.accuracy / 0.05)}× efektívnejšia</strong> pri tej istej veľkosti datasetu.</p>
+
+    ${disagreements.length ? `
+    <details style="margin-top: 12px;">
+      <summary>Sample rozpor (AI ≠ TL) — ${disagreements.length} prípadov</summary>
+      <ul style="font-size: 13px;">${disagreements.map(d => `
+        <li><code>${escapeHtml(d.code || d.ticket_id)}</code> — ${escapeHtml(d.subject || '')}<br>
+            <span class="hint">TL: <strong>${d.actual}</strong>, AI: <strong>${d.ai.classification}</strong> (conf ${d.ai.confidence}%) — <em>${escapeHtml(d.ai.reasoning)}</em></span></li>
+      `).join('')}</ul>
+    </details>` : ''}
+
+    ${lowConf.length ? `
+    <details style="margin-top: 8px;">
+      <summary>Low-confidence (AI si nie je istá) — vzorka ${lowConf.length}</summary>
+      <ul style="font-size: 13px;">${lowConf.map(d => `
+        <li><code>${escapeHtml(d.code || d.ticket_id)}</code> — ${escapeHtml(d.subject || '')} — AI: <strong>${d.ai.classification}</strong> (${d.ai.confidence}%)</li>
+      `).join('')}</ul>
+    </details>` : ''}
+  `;
 }
 
 let _phraseState = { search: '', filterN: 'all', minCount: 5 };
@@ -373,6 +530,47 @@ document.getElementById('test-conn').addEventListener('click', async () => {
     setupStatus.className = 'status err';
     setupStatus.textContent = `Sieťová chyba: ${e.message}`;
   }
+});
+
+// === AI config form ===
+const aiForm = document.getElementById('ai-config-form');
+const aiStatus = document.getElementById('ai-status');
+
+document.getElementById('ai-test').addEventListener('click', async () => {
+  const fd = new FormData(aiForm);
+  const apiKey = fd.get('aiApiKey');
+  if (!apiKey) { aiStatus.className = 'status err'; aiStatus.textContent = 'Najprv vyplň API key.'; return; }
+  aiStatus.className = 'status'; aiStatus.textContent = 'Testujem AI…';
+  try {
+    const res = await fetch('/api/ai-test', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ apiKey }),
+    });
+    const body = await res.json();
+    if (body.ok) {
+      aiStatus.className = 'status ok';
+      aiStatus.textContent = `OK — testovacia odpoveď: "${body.sample.classification}" (confidence ${body.sample.confidence}%, ${body.sample.usage.input_tokens}/${body.sample.usage.output_tokens} tokens)`;
+    } else {
+      aiStatus.className = 'status err';
+      aiStatus.textContent = `Chyba: ${body.message}`;
+    }
+  } catch (e) {
+    aiStatus.className = 'status err';
+    aiStatus.textContent = `Sieťová chyba: ${e.message}`;
+  }
+});
+
+aiForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(aiForm);
+  aiStatus.className = 'status'; aiStatus.textContent = 'Ukladám…';
+  const res = await fetch('/api/save-ai-config', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ apiKey: fd.get('aiApiKey'), model: fd.get('aiModel') }),
+  });
+  const body = await res.json();
+  if (body.ok) { aiStatus.className = 'status ok'; aiStatus.textContent = 'AI config uložený.'; }
+  else { aiStatus.className = 'status err'; aiStatus.textContent = `Chyba: ${body.message}`; }
 });
 
 setupForm.addEventListener('submit', async (e) => {

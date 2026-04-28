@@ -9,9 +9,12 @@
     "test": "node --test server/**/*.test.js"
   },
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
-    "express": "^4.19.2",
-    "dotenv": "^16.4.5"
+    "@anthropic-ai/sdk": "^0.91.1",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
   }
 }

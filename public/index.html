@@ -21,14 +21,35 @@
     <section id="setup" class="panel active">
       <h2>1 · Nastavenie pripojenia</h2>
       <form id="setup-form">
-        <label>LA endpoint URL <input name="baseUrl" type="url" placeholder="https://creativesites.ladesk.com/api/v3" required></label>
-        <label>API kľúč <input name="apiKey" type="password" autocomplete="off" required></label>
-        <label>Default obdobie (dni) <input name="periodDays" type="number" min="1" max="730" value="180"></label>
-        <div class="row">
-          <button type="button" id="test-conn">Otestovať pripojenie</button>
-          <button type="submit">Uložiť</button>
-        </div>
-        <p class="status" id="setup-status"></p>
+        <fieldset style="border:1px solid var(--line); padding:12px; margin:12px 0; max-width:560px;">
+          <legend style="padding:0 8px; color:var(--muted); font-size:13px;">LiveAgent</legend>
+          <label>LA endpoint URL <input name="baseUrl" type="url" placeholder="https://creativesites.ladesk.com/api/v3" required></label>
+          <label>API kľúč <input name="apiKey" type="password" autocomplete="off" required></label>
+          <label>Default obdobie (dni) <input name="periodDays" type="number" min="1" max="730" value="180"></label>
+          <div class="row">
+            <button type="button" id="test-conn">Otestovať pripojenie</button>
+            <button type="submit">Uložiť</button>
+          </div>
+          <p class="status" id="setup-status"></p>
+        </fieldset>
+      </form>
+      <form id="ai-config-form">
+        <fieldset style="border:1px solid var(--line); padding:12px; margin:12px 0; max-width:560px;">
+          <legend style="padding:0 8px; color:var(--muted); font-size:13px;">Anthropic AI (voliteľné — pre validáciu klasifikácie)</legend>
+          <label>Anthropic API key <input name="aiApiKey" type="password" autocomplete="off" placeholder="sk-ant-…"></label>
+          <label>Model
+            <select name="aiModel">
+              <option value="claude-haiku-4-5" selected>claude-haiku-4-5 — najlacnejší (~$2 / 2000 ticketov)</option>
+              <option value="claude-sonnet-4-6">claude-sonnet-4-6 — kvalitnejší (~$7 / 2000 ticketov)</option>
+              <option value="claude-opus-4-7">claude-opus-4-7 — najinteligentnejší (~$15 / 2000 ticketov)</option>
+            </select>
+          </label>
+          <div class="row">
+            <button type="button" id="ai-test">Otestovať AI</button>
+            <button type="submit">Uložiť</button>
+          </div>
+          <p class="status" id="ai-status"></p>
+        </fieldset>
       </form>
     </section>
 
@@ -75,6 +96,7 @@
         <div id="domains" class="card"></div>
         <div id="keywords" class="card wide"></div>
         <div id="rules" class="card wide"></div>
+        <div id="ai-validation" class="card wide"></div>
         <div id="phrases" class="card wide"></div>
         <div id="edges" class="card wide"></div>
       </div>

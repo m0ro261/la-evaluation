@@ -10,6 +10,8 @@ import { distributionStats, weeklyTrend, topCustomers, topDomains, keywordStats,
 import { generateAllRules } from './rule-generator.js';
 import { loadStopwords } from './text-utils.js';
 import { rulesToMarkdown, ticketsToCsv } from './exporter.js';
+import { createAiClient, classifyTicket } from './ai-classifier.js';
+import { evaluateTickets, computeConfusionMatrix, estimateCost } from './ai-evaluator.js';
 import { execSync } from 'node:child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -255,6 +257,124 @@ export function createApp({ clientFactory, storageFactory } = {}) {
     const manualPicks = ((await storage.readJson('manual-rules.json'))?.rules ?? []).map(r => ({ ...r }));
     return { tickets, ...generateAllRules(tickets, { stopwords, manualPicks }) };
   }
+
+  // ─── AI classifier endpoints ─────────────────────────────────────
+  app.post('/api/ai-test', async (req, res) => {
+    const apiKey = req.body?.apiKey ?? process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return res.status(400).json({ ok: false, message: 'ANTHROPIC_API_KEY chýba' });
+    try {
+      const client = createAiClient(apiKey);
+      // Tiny test call — single ticket fixture
+      const out = await classifyTicket(client, {
+        subject: 'Otázka na funkčnosť admin panelu',
+        first_customer_message: { plain_text: 'Dobrý deň, ako môžem pridať novú kategóriu?' },
+      });
+      res.json({ ok: true, sample: out });
+    } catch (e) {
+      const status = e?.status >= 400 && e?.status < 600 ? e.status : 502;
+      res.status(status).json({ ok: false, status: e?.status, message: e.message });
+    }
+  });
+
+  app.post('/api/save-ai-config', async (req, res) => {
+    const { apiKey, model } = req.body ?? {};
+    if (!apiKey) return res.status(400).json({ ok: false, message: 'apiKey je povinné' });
+    if (/[\r\n]/.test(apiKey)) return res.status(400).json({ ok: false, message: 'apiKey nemôže obsahovať nové riadky' });
+    // Read existing .env, update only ANTHROPIC_* lines, preserve everything else.
+    let env = '';
+    try { env = await fs.readFile(ENV_FILE, 'utf8'); } catch {}
+    const lines = env.split('\n').filter(l => !/^ANTHROPIC_(?:API_KEY|MODEL)=/.test(l));
+    lines.push(`ANTHROPIC_API_KEY=${apiKey}`);
+    lines.push(`ANTHROPIC_MODEL=${model || 'claude-haiku-4-5'}`);
+    await fs.writeFile(ENV_FILE, lines.filter(Boolean).join('\n') + '\n', 'utf8');
+    process.env.ANTHROPIC_API_KEY = apiKey;
+    process.env.ANTHROPIC_MODEL = model || 'claude-haiku-4-5';
+    res.json({ ok: true });
+  });
+
+  app.post('/api/ai-results-reset', async (_req, res) => {
+    const storage = makeStorage(dataDir);
+    await storage.writeJson('ai-classifications.json', { results: [], usage: { input_tokens: 0, output_tokens: 0 }, reset_at: new Date().toISOString() });
+    res.json({ ok: true });
+  });
+
+  app.get('/api/ai-results', async (_req, res) => {
+    const storage = makeStorage(dataDir);
+    const data = await storage.readJson('ai-classifications.json');
+    if (!data) return res.json({ ok: true, results: [], confusion: null, usage: null });
+    const confusion = computeConfusionMatrix(data.results || []);
+    const cost = estimateCost(data.usage || {});
+    res.json({ ok: true, ...data, confusion, cost });
+  });
+
+  app.post('/api/ai-evaluate', async (req, res) => {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const model = req.body?.model || process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5';
+    if (!apiKey) return res.status(400).json({ ok: false, message: 'ANTHROPIC_API_KEY chýba — uložte ho cez /api/save-ai-config' });
+
+    const storage = makeStorage(dataDir);
+    const cache = await storage.loadLatest();
+    if (!cache) return res.status(404).json({ ok: false, message: 'no ticket cache — najprv stiahnite tickety' });
+
+    // Filter: only labeled tickets (so we have ground truth to compare against)
+    const onlyClassified = req.body?.onlyClassified !== false; // default true
+    const targetTickets = onlyClassified
+      ? cache.tickets.filter(t => !!t.classification)
+      : cache.tickets;
+    const limit = Number(req.body?.limit);
+    const tickets = Number.isFinite(limit) && limit > 0 ? targetTickets.slice(0, limit) : targetTickets;
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('X-Accel-Buffering', 'no');
+    const send = (event, data) => {
+      if (!res.writableEnded && !res.destroyed) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const ac = new AbortController();
+    res.on('close', () => { if (!res.writableEnded) ac.abort(); });
+
+    try {
+      const client = createAiClient(apiKey);
+
+      // Resume support: if results file exists, skip already-evaluated tickets
+      const existing = await storage.readJson('ai-classifications.json');
+      const existingResults = new Map();
+      if (existing?.results && req.body?.resume !== false) {
+        for (const r of existing.results) if (!r.error) existingResults.set(r.ticket_id, r);
+      }
+
+      send('start', {
+        total: tickets.length,
+        already_evaluated: existingResults.size,
+        to_process: tickets.length - existingResults.size,
+        model,
+      });
+
+      const { results, usage, errors, processed } = await evaluateTickets({
+        client, tickets, model,
+        signal: ac.signal,
+        existingResults,
+        onProgress: (ev) => send('progress', ev),
+      });
+
+      const confusion = computeConfusionMatrix(results);
+      const cost = estimateCost(usage);
+      const payload = {
+        results,
+        usage,
+        cost,
+        model,
+        evaluated_at: new Date().toISOString(),
+      };
+      await storage.writeJson('ai-classifications.json', payload);
+
+      send('done', { ...payload, confusion, errors, processed });
+      res.end();
+    } catch (e) {
+      send('error', { message: e.message, status: e.status });
+      res.end();
+    }
+  });
 
   app.get('/api/export/rules.json', async (_req, res) => {
     const a = await getAnalysisOrStatus(res); if (!a) return;
