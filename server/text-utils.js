@@ -1,6 +1,55 @@
 const ENTITIES = {
+  // structural / punctuation
   '&nbsp;': ' ', '&amp;': '&', '&lt;': '<', '&gt;': '>',
-  '&quot;': '"', '&apos;': "'", '&#39;': "'",
+  '&quot;': '"', '&apos;': "'",
+  '&hellip;': '…', '&ndash;': '–', '&mdash;': '—',
+  '&lsquo;': '‘', '&rsquo;': '’',
+  '&ldquo;': '“', '&rdquo;': '”',
+  '&laquo;': '«', '&raquo;': '»', '&middot;': '·',
+  '&copy;': '©', '&reg;': '®', '&trade;': '™', '&euro;': '€',
+  // Latin-1 vowels with acute accent
+  '&aacute;': 'á', '&Aacute;': 'Á',
+  '&eacute;': 'é', '&Eacute;': 'É',
+  '&iacute;': 'í', '&Iacute;': 'Í',
+  '&oacute;': 'ó', '&Oacute;': 'Ó',
+  '&uacute;': 'ú', '&Uacute;': 'Ú',
+  '&yacute;': 'ý', '&Yacute;': 'Ý',
+  // acute on consonants (Slovak)
+  '&lacute;': 'ĺ', '&Lacute;': 'Ĺ',
+  '&racute;': 'ŕ', '&Racute;': 'Ŕ',
+  // caron / haček (Slovak + Czech)
+  '&ccaron;': 'č', '&Ccaron;': 'Č',
+  '&dcaron;': 'ď', '&Dcaron;': 'Ď',
+  '&ecaron;': 'ě', '&Ecaron;': 'Ě',
+  '&lcaron;': 'ľ', '&Lcaron;': 'Ľ',
+  '&ncaron;': 'ň', '&Ncaron;': 'Ň',
+  '&rcaron;': 'ř', '&Rcaron;': 'Ř',
+  '&scaron;': 'š', '&Scaron;': 'Š',
+  '&tcaron;': 'ť', '&Tcaron;': 'Ť',
+  '&zcaron;': 'ž', '&Zcaron;': 'Ž',
+  // circumflex
+  '&ocirc;': 'ô', '&Ocirc;': 'Ô',
+  '&acirc;': 'â', '&Acirc;': 'Â',
+  '&ecirc;': 'ê', '&Ecirc;': 'Ê',
+  '&icirc;': 'î', '&Icirc;': 'Î',
+  '&ucirc;': 'û', '&Ucirc;': 'Û',
+  // umlaut / diaeresis
+  '&auml;': 'ä', '&Auml;': 'Ä',
+  '&euml;': 'ë', '&Euml;': 'Ë',
+  '&iuml;': 'ï', '&Iuml;': 'Ï',
+  '&ouml;': 'ö', '&Ouml;': 'Ö',
+  '&uuml;': 'ü', '&Uuml;': 'Ü',
+  // grave
+  '&agrave;': 'à', '&Agrave;': 'À',
+  '&egrave;': 'è', '&Egrave;': 'È',
+  '&igrave;': 'ì', '&Igrave;': 'Ì',
+  '&ograve;': 'ò', '&Ograve;': 'Ò',
+  '&ugrave;': 'ù', '&Ugrave;': 'Ù',
+  // tilde / cedilla / other
+  '&ntilde;': 'ñ', '&Ntilde;': 'Ñ',
+  '&ccedil;': 'ç', '&Ccedil;': 'Ç',
+  '&szlig;': 'ß',
+  '&aring;': 'å', '&Aring;': 'Å',
 };
 
 import fs from 'node:fs/promises';
@@ -11,7 +60,16 @@ export function stripHtml(input) {
   s = s.replace(/<style[\s\S]*?<\/style>/gi, ' ');
   s = s.replace(/<script[\s\S]*?<\/script>/gi, ' ');
   s = s.replace(/<[^>]+>/g, ' ');
-  s = s.replace(/&[a-z#0-9]+;/gi, m => ENTITIES[m] ?? (m.startsWith('&#') ? String.fromCodePoint(Number(m.slice(2, -1))) : m));
+  // Numeric entities (decimal and hex)
+  s = s.replace(/&#x([0-9a-fA-F]+);/g, (_, h) => {
+    try { return String.fromCodePoint(parseInt(h, 16)); } catch { return ' '; }
+  });
+  s = s.replace(/&#(\d+);/g, (_, d) => {
+    try { return String.fromCodePoint(Number(d)); } catch { return ' '; }
+  });
+  // Named entities — known map. Unknown named entities collapse to a space
+  // (so they don't survive as bogus tokens like "iacute", "foo", etc.)
+  s = s.replace(/&([a-zA-Z][a-zA-Z0-9]{0,30});/g, (m) => ENTITIES[m] ?? ' ');
   s = s.replace(/\s+/g, ' ').trim();
   return s;
 }

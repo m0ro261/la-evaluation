@@ -11,6 +11,24 @@ test('stripHtml decodes common entities', () => {
   assert.equal(stripHtml('a&nbsp;b&amp;c &lt;x&gt; &#39;y&#39; &quot;z&quot;'), 'a b&c <x> \'y\' "z"');
 });
 
+test('stripHtml decodes Slovak/Latin diacritic entities', () => {
+  assert.equal(stripHtml('Z&aacute;kazn&iacute;cka podpora'), 'Zákaznícka podpora');
+  assert.equal(stripHtml('m&ocirc;&zcaron;e bra&tcaron;'), 'môže brať');
+  assert.equal(stripHtml('&Iacute;NG. N&aacute;rodn&yacute;'), 'ÍNG. Národný');
+});
+
+test('stripHtml decodes hex numeric entities', () => {
+  // 'í' = U+00ED = &#xed;
+  assert.equal(stripHtml('Pr&#xed;klad'), 'Príklad');
+  // decimal too: 'á' = 225
+  assert.equal(stripHtml('p&#225;r'), 'pár');
+});
+
+test('stripHtml replaces unknown named entities with whitespace', () => {
+  // unknown entity should NOT survive as a token like "iacute"
+  assert.equal(stripHtml('foo&unknownentity;bar'), 'foo bar');
+});
+
 test('stripHtml handles empty/null gracefully', () => {
   assert.equal(stripHtml(''), '');
   assert.equal(stripHtml(null), '');
